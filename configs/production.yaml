@@ -1,0 +1,8 @@
+# Override for production runs
+# This will override any dataset-specific config when used
+
+# Usually set to lower memory usage and faster inference
+batch_size: 1
+num_workers: 2
+checkpoint_every: 1
+device: "mps"

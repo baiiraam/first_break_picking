@@ -1,0 +1,5 @@
+# Sudbury configuration
+
+dataset_name: "Sudbury"
+hdf5_path: "data/raw/preprocessed_Sudbury3D.hdf"
+chunk_dir: "data/chunks"

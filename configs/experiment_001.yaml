@@ -1,0 +1,7 @@
+# Override for specific experiment
+
+# Example: Testing different learning rates
+learning_rate: 0.0005
+n_epochs: 50
+lr_scheduler: "cosine"
+lr_T_max: 50

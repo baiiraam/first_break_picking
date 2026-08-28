@@ -1,0 +1,8 @@
+# Brunswick configuration
+
+dataset_name: "Brunswick"
+hdf5_path: "data/raw/Brunswick_orig_1500ms_V2.hdf5"
+chunk_dir: "data/chunks"
+
+
+# go griddy

@@ -1,0 +1,5 @@
+# Lalor configuration
+
+dataset_name: "Lalor"
+hdf5_path: "data/raw/Lalor_raw_z_1500ms_norp_geom_v3.hdf5"
+chunk_dir: "data/chunks"

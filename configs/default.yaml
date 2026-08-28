@@ -1,0 +1,76 @@
+# ============================================================
+# DEFAULT CONFIGURATION
+# ============================================================
+# This file contains the base configuration for all datasets.
+# Specific datasets override values in their own config files.
+
+# ============================================================
+# DATASET PARAMETERS
+# ============================================================
+dataset_name: "default"           # Name of the dataset (used for logging)
+
+# ============================================================
+# DATA PARAMETERS - CRITICAL!
+# ============================================================
+target_traces: 1578               # Number of traces per shot (must match dataset)
+n_samples: 751                    # Number of time samples per trace (must match dataset)
+strip_width: 8                    # Width of the strip (must be even)
+chunk_size: 69                    # Number of shots per chunk
+random_seed: 42                   # Random seed for reproducible splits
+
+# ============================================================
+# TRAIN/VAL/TEST SPLIT
+# ============================================================
+train_split: 0.8                  # 80% for training
+val_split: 0.1                    # 10% for validation
+test_split: 0.1                   # 10% for testing
+
+# ============================================================
+# TRAINING PARAMETERS - YOU WILL CHANGE THESE OFTEN
+# ============================================================
+batch_size: 4                     # Number of shots per batch
+learning_rate: 0.001              # Learning rate
+n_epochs: 5                      # Number of epochs to train
+device: "mps"                     # "cpu", "cuda", or "mps"
+num_workers: 0                    # Number of CPU workers for data loading
+checkpoint_every: 2               # Save checkpoint every N epochs
+
+# ============================================================
+# GPU PARAMETERS
+# ============================================================
+multi_gpu: false                  # Enable multi-GPU training
+gpu_ids: null                     # List of GPU IDs (e.g., [0, 1, 2])
+
+# ============================================================
+# LEARNING RATE SCHEDULER
+# ============================================================
+lr_scheduler: "plateau"           # "step", "plateau", or "cosine"
+lr_patience: 3                    # Epochs to wait before reducing LR (plateau)
+lr_factor: 0.5                    # Factor to reduce LR by
+lr_step_size: 10                  # Epochs between LR reductions (step)
+lr_gamma: 0.5                     # LR reduction factor (step)
+lr_T_max: 30                      # Total epochs for cosine annealing
+
+# ============================================================
+# REGULARIZATION
+# ============================================================
+gradient_clip_value: 1.0          # Max gradient norm (null to disable)
+
+# ============================================================
+# EARLY STOPPING
+# ============================================================
+early_stopping_patience: 5        # Epochs to wait before stopping
+early_stopping_min_delta: 0.0001  # Minimum improvement to count
+
+# ============================================================
+# LOGGING
+# ============================================================
+tensorboard_log_dir: "runs"       # TensorBoard log directory
+mlflow_experiment_name: "seismic-fbp"  # MLflow experiment name
+checkpoint_dir: "checkpoints"     # Checkpoint directory
+log_dir: "logs"                   # Log file directory
+
+# ============================================================
+# PREPROCESSING
+# ============================================================
+force_reprocess: false            # Force reprocessing even if chunks exist
