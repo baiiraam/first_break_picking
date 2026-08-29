@@ -4,6 +4,7 @@ Evaluation metrics for seismic FBP.
 
 import numpy as np
 import torch
+import torch.nn as nn
 from typing import Dict, Any, Tuple, List
 
 
@@ -152,6 +153,30 @@ class FirstBreakMetrics:
             'total_traces': self.total_traces
         }
 
+class ComboLoss(nn.Module):
+    def __init__(self, class_weights, dice_weight=0.5, focal_gamma=2.0):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss(weight=torch.tensor(class_weights))
+        self.dice_weight = dice_weight
+        self.gamma = focal_gamma
+
+    def forward(self, logits, target):
+        # CE
+        ce_loss = self.ce(logits, target)
+        
+        # Focal
+        probs = F.softmax(logits, dim=1)
+        focal = ((1 - probs) ** self.gamma * -torch.log(probs + 1e-7))
+        focal_loss = focal.gather(1, target.unsqueeze(1)).mean()
+        
+        # Dice
+        target_oh = F.one_hot(target, probs.shape[1]).permute(0, 3, 1, 2).float()
+        dims = (0, 2, 3)
+        intersection = (probs * target_oh).sum(dims)
+        dice = (2 * intersection + 1e-6) / (probs.sum(dims) + target_oh.sum(dims) + 1e-6)
+        dice_loss = 1 - dice.mean()
+        
+        return (1 - self.dice_weight) * (0.5 * ce_loss + 0.5 * focal_loss) + self.dice_weight * dice_loss
 
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
     """

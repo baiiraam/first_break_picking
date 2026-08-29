@@ -14,10 +14,14 @@ from pathlib import Path
 class SeismicConfig:
     """Main configuration class for seismic FBP pipeline."""
     
-    # Dataset parameters
+    # === Dataset ===
     dataset_name: str = "Halfmile"
     hdf5_path: str = "data/raw/Halfmile3D_add_geom_sorted.hdf5"
     chunk_dir: str = "data/chunks"
+    preprocess: bool = False
+    force_reprocess: bool = False
+    
+    # === Data ===
     target_traces: int = 1578
     n_samples: int = 751
     strip_width: int = 8
@@ -27,41 +31,48 @@ class SeismicConfig:
     val_split: float = 0.1
     test_split: float = 0.1
     
-    # Training parameters
+    # === Training ===
     batch_size: int = 4
     learning_rate: float = 1e-3
     n_epochs: int = 30
-    device: str = "mps"  # "cpu", "cuda", "mps"
-    num_workers: int = 4
+    device: str = "mps"
+    num_workers: int = 0
+    multi_gpu: bool = False
+    gpu_ids: Optional[list] = None
+    
+    # === Loss ===
+    class_weights: List[float] = field(default_factory=lambda: [0.2, 0.2, 0.6])
+    
+    # === Model Registry ===
+    model_registry_dir: str = "models/registry"
+    checkpoint_dir: str = "models/registry"  # ← ADDED
     checkpoint_every: int = 5
     
-    # GPU parameters
-    multi_gpu: bool = False
-    gpu_ids: Optional[List[int]] = None
-    
-    # Learning rate scheduler
-    lr_scheduler: str = "plateau"  # "step", "plateau", "cosine"
+    # === Scheduler ===
+    lr_scheduler: str = "plateau"
     lr_patience: int = 3
     lr_factor: float = 0.5
     lr_step_size: int = 10
     lr_gamma: float = 0.5
     lr_T_max: int = 30
     
-    # Regularization
+    # === Regularization ===
     gradient_clip_value: Optional[float] = 1.0
     
-    # Early stopping
+    # === Early Stopping ===
     early_stopping_patience: Optional[int] = 5
     early_stopping_min_delta: float = 1e-4
     
-    # Logging
+    # === Logging ===
     tensorboard_log_dir: str = "runs"
     mlflow_experiment_name: str = "seismic-fbp"
-    checkpoint_dir: str = "checkpoints"
     log_dir: str = "logs"
     
-    # Preprocessing
-    force_reprocess: bool = False
+    # === Debugging ===
+    verbose_training: bool = False
+    log_batch_every: int = 0
+    log_memory: bool = False
+    log_predictions_every: int = 5
     
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -81,10 +92,13 @@ class SeismicConfig:
             raise ValueError(f"num_workers must be non-negative, got {self.num_workers}")
         if self.train_split + self.val_split + self.test_split != 1.0:
             raise ValueError(f"train+val+test split must equal 1.0, got {self.train_split + self.val_split + self.test_split}")
+        if len(self.class_weights) != 3:
+            raise ValueError(f"class_weights must have exactly 3 values, got {len(self.class_weights)}")
         
         # Create directories
-        for path in [self.chunk_dir, self.tensorboard_log_dir, self.checkpoint_dir, self.log_dir]:
-            Path(path).mkdir(parents=True, exist_ok=True)
+        Path(self.model_registry_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.log_dir).mkdir(parents=True, exist_ok=True)
     
     def get_config_hash(self) -> str:
         """Generate a unique hash for this configuration."""
@@ -96,8 +110,7 @@ class SeismicConfig:
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
             "lr_scheduler": self.lr_scheduler,
-            "multi_gpu": self.multi_gpu,
-            "chunk_size": self.chunk_size,
+            "class_weights": self.class_weights,
         }
         return hashlib.md5(json.dumps(config_dict, sort_keys=True).encode()).hexdigest()[:8]
     

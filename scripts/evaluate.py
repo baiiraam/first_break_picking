@@ -11,19 +11,17 @@ import numpy as np
 from pathlib import Path
 import click
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+import json
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import SeismicConfig
-from src.utils.logger import setup_logger
+from src.utils.logger import setup_logger, create_task_name
 from src.data.chunked_dataset import ChunkedDataManager
 from src.preprocessing.manifest import load_manifest
-from src.models.unet import UNet
+from src.models.mps_light_unet import MPSLightUNet
 from src.training.metrics import SegmentationMetrics, FirstBreakMetrics
-
-logger = setup_logger()
 
 
 @click.command()
@@ -42,6 +40,10 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     cfg = SeismicConfig(**config_dict)
     cfg.device = device
     cfg.batch_size = batch_size
+    
+    # Setup logger with task name
+    task_name = create_task_name(cfg, "evaluate")
+    logger = setup_logger(task_name=task_name)
     
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - EVALUATION")
@@ -75,7 +77,7 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
         test_dataset,
         batch_size=cfg.batch_size,
         shuffle=False,
-        num_workers=cfg.num_workers // 2,
+        num_workers=0,
         pin_memory=cfg.device == "cuda"
     )
     
@@ -83,7 +85,7 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     
     # Load model
     device_obj = torch.device(cfg.device)
-    model_obj = UNet(in_channels=1, out_channels=3)
+    model_obj = MPSLightUNet(in_channels=1, out_channels=3)
     
     checkpoint = torch.load(model, map_location=device_obj)
     if 'model_state_dict' in checkpoint:
@@ -100,15 +102,11 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     seg_metrics = SegmentationMetrics(num_classes=3)
     fb_metrics = FirstBreakMetrics()
     
-    all_predictions = []
-    all_labels = []
-    all_shot_ids = []
-    
     # Evaluate
     logger.info("\nRunning evaluation...")
     
     with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(tqdm(test_loader, desc="Evaluating")):
+        for x, y in tqdm(test_loader, desc="Evaluating"):
             x, y = x.to(device_obj), y.to(device_obj)
             
             outputs = model_obj(x)
@@ -116,15 +114,6 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
             
             # Update metrics
             seg_metrics.update(preds, y)
-            
-            # Store for first break metrics
-            all_predictions.append(preds.cpu().numpy())
-            all_labels.append(y.cpu().numpy())
-            
-            # Get shot IDs for this batch
-            batch_start = batch_idx * cfg.batch_size
-            batch_end = min(batch_start + cfg.batch_size, len(test_dataset))
-            all_shot_ids.extend(test_dataset.shot_ids[batch_start:batch_end])
     
     # Compute metrics
     logger.info("\n" + "=" * 60)
@@ -133,40 +122,21 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     
     seg_results = seg_metrics.compute()
     for metric_name, value in seg_results.items():
-        logger.info(f"  {metric_name}: {value:.4f}")
-    
-    # First break metrics (extract pick positions from masks)
-    all_preds_flat = np.concatenate([p.flatten() for p in all_predictions])
-    all_labels_flat = np.concatenate([l.flatten() for l in all_labels])
-    
-    # Compute accuracy per class
-    class_acc = {}
-    for class_id in range(3):
-        mask = all_labels_flat == class_id
-        if mask.sum() > 0:
-            class_acc[f"class_{class_id}_accuracy"] = (all_preds_flat[mask] == class_id).sum() / mask.sum()
-    
-    logger.info("\n" + "=" * 60)
-    logger.info("📊 CLASS-WISE ACCURACY")
-    logger.info("=" * 60)
-    for class_name, acc in class_acc.items():
-        logger.info(f"  {class_name}: {acc:.4f}")
+        if not isinstance(value, list):
+            logger.info(f"  {metric_name}: {value:.4f}")
     
     # Save results
     output_dir = Path(output)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save metrics
     results = {
         'segmentation_metrics': seg_results,
-        'class_accuracy': class_acc,
         'config': cfg.to_dict(),
         'model_path': model,
         'dataset': cfg.dataset_name,
         'test_samples': len(test_dataset)
     }
     
-    import json
     with open(output_dir / 'evaluation_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
