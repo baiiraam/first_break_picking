@@ -23,7 +23,7 @@ class MLflowManager:
         if tracking_uri:
             mlflow.set_tracking_uri(tracking_uri)
         else:
-            mlflow.set_tracking_uri("file:./mlruns")
+            mlflow.set_tracking_uri("sqlite:///mlflow.db")
         
         # Set or create experiment
         experiment = mlflow.get_experiment_by_name(experiment_name)

@@ -11,8 +11,6 @@ import yaml
 import torch
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
-from datetime import datetime
 import click
 from tqdm import tqdm
 
@@ -20,19 +18,18 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import SeismicConfig
-from src.utils.logger import get_logger
+from src.utils.logger import setup_logger, create_task_name
 from src.utils.hdf5_utils import load_shot_indices, load_shot_data, validate_hdf5
 from src.preprocessing.processor import ShotProcessor
 from src.preprocessing.chunker import Chunker
 from src.preprocessing.manifest import generate_manifest, save_manifest
 
-logger = get_logger()
-
 
 @click.command()
 @click.option('--config', '-c', required=True, help='Path to config YAML file')
 @click.option('--force', '-f', is_flag=True, help='Force reprocessing even if chunks exist')
-def main(config: str, force: bool):
+@click.option('--dataset', '-d', help='Override dataset name (for logging)')
+def main(config: str, force: bool, dataset: str):
     """Run the preprocessing pipeline."""
     
     # Load config
@@ -40,6 +37,15 @@ def main(config: str, force: bool):
         config_dict = yaml.safe_load(f)
     
     cfg = SeismicConfig(**config_dict)
+    
+    # Override dataset name if provided
+    if dataset:
+        cfg.dataset_name = dataset
+    
+    # Setup logger with dynamic task name
+    task_name = create_task_name(cfg, "preprocess")
+    logger = setup_logger(task_name=task_name)
+    
     if force:
         cfg.force_reprocess = True
     
@@ -71,6 +77,7 @@ def main(config: str, force: bool):
             manifest = json.load(f)
         logger.info(f"   Total shots: {manifest['total_shots']}")
         logger.info(f"   Total chunks: {len(manifest['chunks'])}")
+        logger.info("✅ Preprocessing complete! (already existed)")
         return
     
     # Create chunk directory
@@ -210,7 +217,8 @@ def main(config: str, force: bool):
     logger.info(f"Total chunks: {processed_chunks}")
     logger.info(f"Chunk directory: {chunk_dir}")
     logger.info(f"Manifest: {manifest_path}")
-    logger.info(f"Total size: ~{sum(c['file_size_mb'] for chunk_list in chunks.values() for c in chunk_list):.1f} MB")
+    logger.info(f"Log file: {logger._core.handlers[1]._path}")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

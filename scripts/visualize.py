@@ -16,12 +16,10 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import SeismicConfig
-from src.utils.logger import setup_logger
+from src.utils.logger import setup_logger, create_task_name
 from src.data.chunked_dataset import ChunkedDataManager
 from src.preprocessing.manifest import load_manifest
-from src.models.unet import UNet
-
-logger = setup_logger()
+from src.models.mps_light_unet import MPSLightUNet
 
 
 @click.command()
@@ -39,6 +37,10 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
     
     cfg = SeismicConfig(**config_dict)
     cfg.device = device
+    
+    # Setup logger with task name
+    task_name = create_task_name(cfg, "visualize")
+    logger = setup_logger(task_name=task_name)
     
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - VISUALIZATION")
@@ -71,7 +73,7 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
     
     # Load model
     device_obj = torch.device(cfg.device)
-    model_obj = UNet(in_channels=1, out_channels=3)
+    model_obj = MPSLightUNet(in_channels=1, out_channels=3)
     
     checkpoint = torch.load(model, map_location=device_obj)
     if 'model_state_dict' in checkpoint:

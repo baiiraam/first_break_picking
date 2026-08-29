@@ -15,17 +15,21 @@ import click
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import SeismicConfig
-from src.utils.logger import get_logger
+from src.utils.logger import setup_logger, create_task_name
 from src.data.chunked_dataset import ChunkedDataManager
 from src.preprocessing.manifest import load_manifest, validate_manifest
+from src.preprocessing.processor import ShotProcessor
+from src.preprocessing.chunker import Chunker
+from src.preprocessing.manifest import generate_manifest, save_manifest
+from src.utils.hdf5_utils import load_shot_indices, validate_hdf5
 
 from src.models.unet import UNet
 from src.models.efficient_unet import EfficientUNet
 from src.models.mobilenet import MobileUNet
+from src.models.light_unet import LightUNet, NanoUNet
+from src.models.mps_light_unet import MPSLightUNet
 
 from src.training.trainer import SeismicTrainer
-
-logger = get_logger()
 
 
 @click.command()
@@ -33,9 +37,18 @@ logger = get_logger()
 @click.option('--resume', '-r', help='Path to checkpoint to resume from')
 @click.option('--device', '-d', help='Override device (cpu/cuda/mps)')
 @click.option('--epochs', '-e', type=int, help='Override number of epochs')
-@click.option('--model', '-m', type=click.Choice(['unet', 'efficient', 'mobile']), 
-              default='unet', help='Model architecture to use')
-def main(config: str, resume: str, device: str, epochs: int, model: str):
+@click.option('--model', '-m', 
+              type=click.Choice(['unet', 'efficient', 'mobile', 'light', 'nano', 'mpslight']), 
+              default='unet', 
+              help='Model architecture to use')
+@click.option('--dataset', '-ds', help='Override dataset name (for logging)')
+@click.option('--preprocess', '-p', is_flag=True, help='Force preprocessing even if chunks exist')
+@click.option('--class-weights', '-cw', nargs=3, type=float, 
+              help='Override class weights (e.g., --class-weights 0.2 0.2 0.6)')
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option('--log-memory', '-lm', is_flag=True, help='Enable memory logging')
+def main(config: str, resume: str, device: str, epochs: int, model: str, 
+         dataset: str, preprocess: bool, class_weights: tuple, verbose: bool, log_memory: bool):
     """Run the training pipeline."""
     
     # Load config
@@ -45,10 +58,24 @@ def main(config: str, resume: str, device: str, epochs: int, model: str):
     cfg = SeismicConfig(**config_dict)
     
     # Override options
+    if dataset:
+        cfg.dataset_name = dataset
     if device:
         cfg.device = device
     if epochs:
         cfg.n_epochs = epochs
+    if preprocess:
+        cfg.preprocess = True
+    if class_weights:
+        cfg.class_weights = list(class_weights)
+    if verbose:
+        cfg.verbose_training = True
+    if log_memory:
+        cfg.log_memory = True
+    
+    # Setup logger
+    task_name = create_task_name(cfg, "training", model)
+    logger = setup_logger(task_name=task_name)
     
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - TRAINING PIPELINE")
@@ -59,16 +86,120 @@ def main(config: str, resume: str, device: str, epochs: int, model: str):
     logger.info(f"Epochs: {cfg.n_epochs}")
     logger.info(f"Learning rate: {cfg.learning_rate}")
     logger.info(f"LR scheduler: {cfg.lr_scheduler}")
+    logger.info(f"Model: {model}")
+    logger.info(f"Class weights: {cfg.class_weights}")
+    logger.info(f"Log memory: {cfg.log_memory}")
+    logger.info(f"Preprocess: {cfg.preprocess}")
     
-    # Load manifest
+    # --- DATA DISCOVERY & PREPROCESSING ---
     chunk_dir = Path(cfg.chunk_dir) / cfg.dataset_name
     manifest_path = chunk_dir / "manifest.json"
     
-    if not manifest_path.exists():
-        logger.error(f"Manifest not found: {manifest_path}")
-        logger.error("Please run preprocessing first: python scripts/preprocess.py --config configs/halfmile.yaml")
-        sys.exit(1)
+    # Check if preprocessing is needed
+    needs_preprocessing = cfg.preprocess or not manifest_path.exists()
     
+    if needs_preprocessing:
+        logger.info(f"\n🔄 Preprocessing {cfg.dataset_name}...")
+        
+        # Validate HDF5
+        if not validate_hdf5(cfg.hdf5_path):
+            logger.error("HDF5 validation failed. Exiting.")
+            sys.exit(1)
+        
+        # Phase 1: Data Discovery
+        unique_shots, start_indices, end_indices = load_shot_indices(cfg.hdf5_path)
+        total_shots = len(unique_shots)
+        trace_counts = end_indices - start_indices
+        
+        logger.info(f"Total shots: {total_shots}")
+        logger.info(f"Trace counts: min={trace_counts.min()}, max={trace_counts.max()}")
+        
+        # Filter valid shots
+        valid_mask = trace_counts >= 10
+        valid_shots = unique_shots[valid_mask]
+        valid_indices = start_indices[valid_mask]
+        valid_end_indices = end_indices[valid_mask]
+        
+        if len(valid_shots) == 0:
+            logger.error("No valid shots found.")
+            sys.exit(1)
+        
+        # Phase 2: Chunk Assignment
+        chunker = Chunker(
+            chunk_size=cfg.chunk_size,
+            train_split=cfg.train_split,
+            val_split=cfg.val_split,
+            test_split=cfg.test_split,
+            random_seed=cfg.random_seed
+        )
+        
+        splits = chunker.assign_splits(valid_shots)
+        
+        # Map shot IDs to indices
+        shot_to_start = {shot: start for shot, start in zip(valid_shots, valid_indices)}
+        shot_to_end = {shot: end for shot, end in zip(valid_shots, valid_end_indices)}
+        
+        chunks = {}
+        for split_name, shot_list in splits.items():
+            chunks[split_name] = chunker.create_chunks(shot_list)
+            logger.info(f"  {split_name}: {len(shot_list)} shots, {len(chunks[split_name])} chunks")
+        
+        # Phase 3: Processing
+        processor = ShotProcessor(
+            target_traces=cfg.target_traces,
+            n_samples=cfg.n_samples,
+            strip_width=cfg.strip_width
+        )
+        
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        
+        for split_name, chunk_list in chunks.items():
+            for chunk in chunk_list:
+                chunk_id = chunk['id']
+                shot_ids = chunk['shot_ids']
+                n_shots = chunk['n_shots']
+                
+                data_batch = torch.zeros((n_shots, cfg.target_traces, cfg.n_samples), dtype=torch.float32)
+                mask_batch = torch.zeros((n_shots, cfg.target_traces, cfg.n_samples), dtype=torch.long)
+                
+                for i, shot_id in enumerate(shot_ids):
+                    import numpy as np
+                    from src.utils.hdf5_utils import load_shot_data
+                    
+                    shot_data, shot_picks = load_shot_data(
+                        cfg.hdf5_path, shot_to_start[shot_id], shot_to_end[shot_id],
+                        cfg.target_traces, cfg.n_samples
+                    )
+                    
+                    processed_data, processed_mask = processor.process_shot(shot_data, shot_picks)
+                    data_batch[i] = torch.tensor(processed_data, dtype=torch.float32)
+                    mask_batch[i] = torch.tensor(processed_mask, dtype=torch.long)
+                
+                chunk_filename = f"chunk_{chunk_id:03d}_{split_name}.pt"
+                chunk_path = chunk_dir / chunk_filename
+                
+                torch.save({
+                    'data': data_batch,
+                    'mask': mask_batch,
+                    'shot_ids': shot_ids,
+                    'split': split_name,
+                    'chunk_id': chunk_id,
+                    'n_shots': n_shots
+                }, chunk_path)
+        
+        # Phase 4: Generate Manifest
+        manifest = generate_manifest(
+            dataset_name=cfg.dataset_name,
+            chunks=chunks,
+            config=cfg.to_dict(),
+            chunk_dir=chunk_dir,
+            total_shots=len(valid_shots),
+            total_traces=int(sum(trace_counts))
+        )
+        save_manifest(manifest, manifest_path)
+        logger.info(f"✅ Preprocessing complete for {cfg.dataset_name}")
+    
+    # Load manifest
     manifest = load_manifest(manifest_path)
     if not validate_manifest(manifest):
         logger.error("Invalid manifest")
@@ -144,6 +275,15 @@ def main(config: str, resume: str, device: str, epochs: int, model: str):
     elif model == "mobile":
         model_obj = MobileUNet(in_channels=1, out_channels=3, pretrained=True)
         model_name = "MobileUNet"
+    elif model == "light":
+        model_obj = LightUNet(in_channels=1, out_channels=3)
+        model_name = "LightUNet"
+    elif model == "nano":
+        model_obj = NanoUNet(in_channels=1, out_channels=3)
+        model_name = "NanoUNet"
+    elif model == "mpslight":
+        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
+        model_name = "MPSLightUNet"
     else:
         raise ValueError(f"Unknown model: {model}")
     
@@ -151,16 +291,15 @@ def main(config: str, resume: str, device: str, epochs: int, model: str):
     logger.info(f"\nModel: {model_name}")
     logger.info(f"  Parameters: {total_params:,}")
     
-    # Optimizer and loss
+    # Optimizer and loss (using configurable class weights)
     optimizer = torch.optim.Adam(model_obj.parameters(), lr=cfg.learning_rate)
     
-    # Weighted loss for class imbalance
     device = torch.device(cfg.device)
-    class_weights = torch.tensor([0.2, 0.2, 0.6], dtype=torch.float32).to(device)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    class_weights_tensor = torch.tensor(cfg.class_weights, dtype=torch.float32).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
     criterion = criterion.to(device)
     
-    logger.info(f"\nClass weights: {class_weights.tolist()}")
+    logger.info(f"\nClass weights: {class_weights_tensor.tolist()}")
     
     # Trainer
     trainer = SeismicTrainer(
@@ -168,14 +307,27 @@ def main(config: str, resume: str, device: str, epochs: int, model: str):
         dataloaders=dataloaders,
         criterion=criterion,
         optimizer=optimizer,
-        config=cfg
+        config=cfg,
+        model_name=model_name
     )
     
     # Train
-    trainer.fit(resume_from=resume)
+    trainer.fit(resume_from=resume, verbose=cfg.verbose_training)
     
     logger.info("\n" + "=" * 60)
     logger.info("✅ TRAINING COMPLETE!")
+    logger.info("=" * 60)
+    logger.info(f"Model registry: {cfg.model_registry_dir}")
+    logger.info(f"TensorBoard: runs/{cfg.dataset_name}/{model_name}")
+    # Get the main log file path safely
+    try:
+        log_path = logger._core.handlers[1]._path if len(logger._core.handlers) > 1 else "logs/"
+    except:
+        log_path = "logs/"
+    logger.info(f"Log file: {log_path}")
+    logger.info("\nTo view results:")
+    logger.info(f"  tensorboard --logdir runs/{cfg.dataset_name}/{model_name}")
+    logger.info("  mlflow ui --backend-store-uri sqlite:///mlflow.db")
     logger.info("=" * 60)
 
 
