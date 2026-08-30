@@ -1,5 +1,5 @@
 """
-HDF5 dataset for lazy loading from HDF5 files (fallback option).
+HDF5 dataset for lazy loading with level-based telemetry.
 """
 
 import h5py
@@ -14,7 +14,10 @@ from loguru import logger
 class HDF5SeismicDataset(Dataset):
     """
     Memory-efficient dataset that loads from HDF5 on-the-fly.
-    Useful when chunked data is not available.
+    
+    Logging:
+        - INFO: Dataset init
+        - DEBUG: Every __getitem__ call with shot_id and slice info
     """
     
     def __init__(
@@ -37,7 +40,8 @@ class HDF5SeismicDataset(Dataset):
         self.file = None
         self.group = None
         
-        logger.info(f"HDF5Dataset initialized: {len(self)} shots")
+        logger.info(f"[HDF5] INIT: {len(self)} shots, file={hdf5_path}")
+        logger.debug(f"[HDF5] target_traces={target_traces}, n_samples={n_samples}, strip_width={strip_width}")
     
     def __len__(self) -> int:
         return len(self.shot_ids)
@@ -47,7 +51,10 @@ class HDF5SeismicDataset(Dataset):
         shot_id = self.shot_ids[idx]
         start_idx, end_idx = self.shot_indices[shot_id]
         
+        logger.debug(f"[HDF5] GET idx={idx} → shot={shot_id}, slice={start_idx}:{end_idx}")
+        
         if self.file is None:
+            logger.debug(f"[HDF5] Opening HDF5 file: {self.hdf5_path}")
             self.file = h5py.File(self.hdf5_path, 'r', swmr=True)
             self.group = self.file['TRACE_DATA']['DEFAULT']
         
@@ -68,7 +75,6 @@ class HDF5SeismicDataset(Dataset):
             shot_data = shot_data[:self.target_traces, :]
             shot_picks = shot_picks[:self.target_traces]
         
-        # Create mask
         mask = self._create_mask(shot_picks)
         
         return (
@@ -77,7 +83,6 @@ class HDF5SeismicDataset(Dataset):
         )
     
     def _create_mask(self, picks: np.ndarray) -> np.ndarray:
-        """Create 3-class segmentation mask."""
         n_traces = len(picks)
         mask = np.zeros((n_traces, self.n_samples), dtype=np.int64)
         
@@ -93,8 +98,8 @@ class HDF5SeismicDataset(Dataset):
         return mask
     
     def close(self):
-        """Close HDF5 file."""
         if self.file is not None:
+            logger.debug(f"[HDF5] Closing file: {self.hdf5_path}")
             self.file.close()
             self.file = None
             self.group = None

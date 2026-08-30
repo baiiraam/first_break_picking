@@ -45,8 +45,11 @@ class SeismicConfig:
     
     # === Model Registry ===
     model_registry_dir: str = "models/registry"
-    checkpoint_dir: str = "models/registry"  # ← ADDED
+    checkpoint_dir: str = "models/registry"
     checkpoint_every: int = 5
+    
+    # === Cache ===
+    cache_size: int = 3  # Number of chunks to keep in memory
     
     # === Scheduler ===
     lr_scheduler: str = "plateau"
@@ -67,21 +70,39 @@ class SeismicConfig:
     tensorboard_log_dir: str = "runs"
     mlflow_experiment_name: str = "seismic-fbp"
     log_dir: str = "logs"
-    
-    # === Debugging ===
-    verbose_training: bool = False
-    log_batch_every: int = 0
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     log_memory: bool = False
     log_predictions_every: int = 5
+    log_metrics_every: int = 1
+    log_gradients: bool = False
+
+    # === Debugging ===
+    verbose_training: bool = False
+    log_batch_every: Optional[int] = None  # None = disabled
+
     
     def __post_init__(self):
         """Validate configuration parameters."""
+        # Data validation
         if self.target_traces <= 0:
             raise ValueError(f"target_traces must be positive, got {self.target_traces}")
         if self.n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {self.n_samples}")
         if self.strip_width <= 0 or self.strip_width % 2 != 0:
             raise ValueError(f"strip_width must be positive and even, got {self.strip_width}")
+        if self.chunk_size <= 0:
+            raise ValueError(f"chunk_size must be positive, got {self.chunk_size}")
+        if self.cache_size <= 0:
+            raise ValueError(f"cache_size must be positive, got {self.cache_size}")
+        
+        # Split validation
+        if self.train_split + self.val_split + self.test_split != 1.0:
+            raise ValueError(
+                f"train+val+test split must equal 1.0, "
+                f"got {self.train_split + self.val_split + self.test_split}"
+            )
+        
+        # Training validation
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {self.batch_size}")
         if self.learning_rate <= 0:
@@ -90,10 +111,35 @@ class SeismicConfig:
             raise ValueError(f"n_epochs must be positive, got {self.n_epochs}")
         if self.num_workers < 0:
             raise ValueError(f"num_workers must be non-negative, got {self.num_workers}")
-        if self.train_split + self.val_split + self.test_split != 1.0:
-            raise ValueError(f"train+val+test split must equal 1.0, got {self.train_split + self.val_split + self.test_split}")
+        
+        # Loss validation
         if len(self.class_weights) != 3:
-            raise ValueError(f"class_weights must have exactly 3 values, got {len(self.class_weights)}")
+            raise ValueError(
+                f"class_weights must have exactly 3 values, got {len(self.class_weights)}"
+            )
+        if any(w < 0 for w in self.class_weights):
+            raise ValueError(f"class_weights must be non-negative, got {self.class_weights}")
+        
+        # Log level validation
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if self.log_level.upper() not in valid_levels:
+            raise ValueError(
+                f"log_level must be one of {valid_levels}, got {self.log_level}"
+            )
+        
+        # Scheduler validation
+        valid_schedulers = ["step", "plateau", "cosine"]
+        if self.lr_scheduler not in valid_schedulers:
+            raise ValueError(
+                f"lr_scheduler must be one of {valid_schedulers}, got {self.lr_scheduler}"
+            )
+        
+        # Device validation
+        valid_devices = ["cpu", "cuda", "mps"]
+        if self.device not in valid_devices:
+            raise ValueError(
+                f"device must be one of {valid_devices}, got {self.device}"
+            )
         
         # Create directories
         Path(self.model_registry_dir).mkdir(parents=True, exist_ok=True)
@@ -112,14 +158,21 @@ class SeismicConfig:
             "lr_scheduler": self.lr_scheduler,
             "class_weights": self.class_weights,
         }
-        return hashlib.md5(json.dumps(config_dict, sort_keys=True).encode()).hexdigest()[:8]
+        return hashlib.md5(
+            json.dumps(config_dict, sort_keys=True).encode()
+        ).hexdigest()[:8]
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary."""
+        """Convert config to dictionary for logging."""
         return {
             k: v for k, v in self.__dict__.items()
             if not k.startswith('_')
         }
+    
+    def to_yaml(self) -> str:
+        """Convert config to YAML string."""
+        import yaml
+        return yaml.dump(self.to_dict(), default_flow_style=False, indent=2)
     
     def __repr__(self) -> str:
         """Human-readable representation."""

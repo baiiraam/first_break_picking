@@ -1,5 +1,5 @@
 """
-Centralized logging configuration using Loguru with date-based folders.
+Centralized logging configuration using Loguru with date-based folders and configurable log level.
 """
 
 import sys
@@ -20,7 +20,7 @@ class SeismicLogger:
         - Timestamp in filename (HH-MM-SS)
         - Symlink to latest log
         - Log rotation, compression, and retention
-        - JSON logs for monitoring
+        - Configurable log level
     """
     
     def __init__(
@@ -32,8 +32,14 @@ class SeismicLogger:
     ):
         self.log_dir = Path(log_dir)
         self.task_name = task_name
-        self.level = level
+        self.level = level.upper()
         self.create_latest_symlink = create_latest_symlink
+        
+        # Validate log level
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if self.level not in valid_levels:
+            print(f"Warning: Invalid log level '{level}', defaulting to INFO")
+            self.level = "INFO"
         
         # Create base log directory
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -53,7 +59,7 @@ class SeismicLogger:
             self._create_symlink()
     
     def _setup_logger(self):
-        """Setup all logger handlers."""
+        """Setup all logger handlers with configurable level."""
         # Remove default handlers
         logger.remove()
         
@@ -74,22 +80,22 @@ class SeismicLogger:
         
         # --- File Handlers ---
         
-        # 1. Main log file (INFO and above)
-        main_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}.log"
+        # 1. Main log file (configurable level)
+        self.main_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}.log"
         logger.add(
-            main_log_path,
+            self.main_log_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
-            level="INFO",
+            level=self.level,
             rotation="10 MB",
             retention="7 days",
             compression="gz",
             enqueue=True
         )
         
-        # 2. Error file handler (ERROR and above)
-        error_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}_errors.log"
+        # 2. Error file handler (ERROR and above, always on)
+        self.error_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}_errors.log"
         logger.add(
-            error_log_path,
+            self.error_log_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
             level="ERROR",
             rotation="10 MB",
@@ -98,10 +104,10 @@ class SeismicLogger:
             enqueue=True
         )
         
-        # 3. Debug file handler (DEBUG only)
-        debug_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}_debug.log"
+        # 3. Debug file handler (DEBUG only, always on)
+        self.debug_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}_debug.log"
         logger.add(
-            debug_log_path,
+            self.debug_log_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
             level="DEBUG",
             rotation="50 MB",
@@ -112,9 +118,9 @@ class SeismicLogger:
         )
         
         # 4. JSON logs for monitoring (INFO and above)
-        json_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}.json"
+        self.json_log_path = self.date_dir / f"{self.timestamp}_{self.task_name}.json"
         logger.add(
-            json_log_path,
+            self.json_log_path,
             format="{message}",
             level="INFO",
             rotation="10 MB",
@@ -125,28 +131,29 @@ class SeismicLogger:
         )
         
         # Store log paths for reference
-        self.main_log_path = main_log_path
-        self.error_log_path = error_log_path
-        self.debug_log_path = debug_log_path
-        self.json_log_path = json_log_path
+        self.main_log_path = self.main_log_path
+        self.error_log_path = self.error_log_path
+        self.debug_log_path = self.debug_log_path
+        self.json_log_path = self.json_log_path
     
     def _create_symlink(self):
         """Create a symlink to the latest log file."""
+        # Skip in worker processes
+        from multiprocessing import current_process
+        if current_process().name != 'MainProcess':
+            return
+        
         latest_dir = self.log_dir / "latest"
         latest_dir.mkdir(exist_ok=True)
         
-        # Remove old symlink if it exists
         latest_link = latest_dir / "latest.log"
         if latest_link.exists() or latest_link.is_symlink():
             latest_link.unlink()
         
-        # Create new symlink
         try:
-            # Relative path to the actual log file
             rel_path = os.path.relpath(self.main_log_path, latest_dir)
             os.symlink(rel_path, latest_link)
         except Exception as e:
-            # If symlink fails, it's not critical
             logger.debug(f"Could not create symlink: {e}")
     
     def get_log_paths(self) -> dict:
@@ -177,25 +184,16 @@ def setup_logger(
     create_latest_symlink: bool = True
 ):
     """
-    Setup a logger with a specific task name.
+    Setup a logger with a specific task name and log level.
     
     Args:
         task_name: Name of the task (e.g., 'preprocess_Halfmile', 'training_Halfmile_unet')
         log_dir: Directory to store logs
-        level: Log level (DEBUG, INFO, WARNING, ERROR)
+        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         create_latest_symlink: Whether to create a symlink to the latest log
     
     Returns:
         loguru.Logger: Configured logger instance
-    
-    Usage:
-        # In preprocessing script
-        logger = setup_logger(task_name="preprocess_Halfmile")
-        logger.info("Starting preprocessing...")
-        
-        # In training script
-        logger = setup_logger(task_name="training_Halfmile_unet")
-        logger.info("Starting training...")
     """
     global _global_logger
     
@@ -219,8 +217,7 @@ def get_logger():
     global _global_logger
     
     if _global_logger is None:
-        # Create a default logger
-        seismic_logger = SeismicLogger(task_name="general")
+        seismic_logger = SeismicLogger(task_name="general", level="INFO")
         _global_logger = seismic_logger
     
     return _global_logger.get_logger()
@@ -237,15 +234,8 @@ def create_task_name(config, task_type: str, model_name: Optional[str] = None) -
     
     Returns:
         str: Task name (e.g., 'preprocess_Halfmile', 'training_Halfmile_unet')
-    
-    Usage:
-        cfg = SeismicConfig(...)
-        task_name = create_task_name(cfg, "train", "mpslight")
-        # task_name = "training_Halfmile_mpslight"
     """
     parts = [task_type, config.dataset_name]
-    
     if model_name:
         parts.append(model_name)
-    
     return "_".join(parts)
