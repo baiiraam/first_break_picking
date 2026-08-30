@@ -45,10 +45,14 @@ from src.training.trainer import SeismicTrainer
 @click.option('--preprocess', '-p', is_flag=True, help='Force preprocessing even if chunks exist')
 @click.option('--class-weights', '-cw', nargs=3, type=float, 
               help='Override class weights (e.g., --class-weights 0.2 0.2 0.6)')
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging (sets log_level=DEBUG)')
 @click.option('--log-memory', '-lm', is_flag=True, help='Enable memory logging')
+@click.option('--log-level', '-ll', 
+              type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+              help='Override log level')
 def main(config: str, resume: str, device: str, epochs: int, model: str, 
-         dataset: str, preprocess: bool, class_weights: tuple, verbose: bool, log_memory: bool):
+         dataset: str, preprocess: bool, class_weights: tuple, verbose: bool, 
+         log_memory: bool, log_level: str):
     """Run the training pipeline."""
     
     # Load config
@@ -70,12 +74,15 @@ def main(config: str, resume: str, device: str, epochs: int, model: str,
         cfg.class_weights = list(class_weights)
     if verbose:
         cfg.verbose_training = True
+        cfg.log_level = "DEBUG"
     if log_memory:
         cfg.log_memory = True
+    if log_level:
+        cfg.log_level = log_level
     
-    # Setup logger
+    # Setup logger with configurable level
     task_name = create_task_name(cfg, "training", model)
-    logger = setup_logger(task_name=task_name)
+    logger = setup_logger(task_name=task_name, level=cfg.log_level)
     
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - TRAINING PIPELINE")
@@ -88,7 +95,9 @@ def main(config: str, resume: str, device: str, epochs: int, model: str,
     logger.info(f"LR scheduler: {cfg.lr_scheduler}")
     logger.info(f"Model: {model}")
     logger.info(f"Class weights: {cfg.class_weights}")
+    logger.info(f"Log level: {cfg.log_level}")
     logger.info(f"Log memory: {cfg.log_memory}")
+    logger.info(f"Cache size: {cfg.cache_size}")
     logger.info(f"Preprocess: {cfg.preprocess}")
     
     # --- DATA DISCOVERY & PREPROCESSING ---
@@ -209,11 +218,11 @@ def main(config: str, resume: str, device: str, epochs: int, model: str,
     logger.info(f"  Total shots: {manifest['total_shots']}")
     logger.info(f"  Total chunks: {len(manifest['chunks'])}")
     
-    # Create data manager and datasets
+    # Create data manager and datasets (with configurable cache size)
     data_manager = ChunkedDataManager(
         chunk_dir=chunk_dir,
         manifest=manifest,
-        cache_size=3,
+        cache_size=cfg.cache_size,  # ← From config
         shuffle_chunks=True
     )
     
@@ -319,6 +328,7 @@ def main(config: str, resume: str, device: str, epochs: int, model: str,
     logger.info("=" * 60)
     logger.info(f"Model registry: {cfg.model_registry_dir}")
     logger.info(f"TensorBoard: runs/{cfg.dataset_name}/{model_name}")
+    
     # Get the main log file path safely
     try:
         log_path = logger._core.handlers[1]._path if len(logger._core.handlers) > 1 else "logs/"

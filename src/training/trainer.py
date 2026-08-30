@@ -6,7 +6,7 @@ import os
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import mlflow
@@ -18,6 +18,13 @@ import numpy as np
 from src.utils.logger import get_logger
 from src.utils.mlflow_utils import MLflowManager
 from src.config import SeismicConfig
+from src.training.metrics import (
+    SegmentationMetrics,
+    FirstBreakMetrics,
+    compute_gradient_norm,
+    compute_weight_norm,
+    extract_picks_from_mask
+)
 
 logger = get_logger()
 
@@ -158,10 +165,17 @@ class SeismicTrainer:
             memory['max_allocated'] = torch.cuda.max_memory_allocated() / 1e9
         return memory
     
-    def train_epoch(self, verbose: bool = False) -> float:
-        """Run one training epoch."""
+    def train_epoch(self, verbose: bool = False) -> Tuple[float, Dict]:
+        """
+        Run one training epoch.
+        
+        Returns:
+            avg_loss: Average training loss
+            metrics: Dictionary of training metrics (IoU, accuracy, etc.)
+        """
         self.model.train()
         total_loss = 0.0
+        seg_metrics = SegmentationMetrics(num_classes=3)
         
         if self.device.type == "mps":
             torch.mps.empty_cache()
@@ -189,18 +203,32 @@ class SeismicTrainer:
             self.optimizer.step()
             total_loss += loss.item()
             
+            # Update segmentation metrics
+            preds = torch.argmax(outputs, dim=1)
+            seg_metrics.update(preds, y)
+            
             if verbose and batch_idx % 10 == 0:
                 logger.debug(f"Batch {batch_idx}/{len(self.dataloaders['train'])} - Loss: {loss.item():.4f}")
             
             pbar.set_postfix({'loss': f'{loss.item():.4f}'})
         
-        return total_loss / len(self.dataloaders['train'])
+        avg_loss = total_loss / len(self.dataloaders['train'])
+        metrics = seg_metrics.compute()
+        
+        return avg_loss, metrics
     
     @torch.no_grad()
-    def validate(self, verbose: bool = False) -> float:
-        """Run validation."""
+    def validate(self, verbose: bool = False) -> Tuple[float, Dict]:
+        """
+        Run validation.
+        
+        Returns:
+            avg_loss: Average validation loss
+            metrics: Dictionary of validation metrics (IoU, accuracy, etc.)
+        """
         self.model.eval()
         total_loss = 0.0
+        seg_metrics = SegmentationMetrics(num_classes=3)
         
         if self.device.type == "mps":
             torch.mps.empty_cache()
@@ -215,10 +243,15 @@ class SeismicTrainer:
             
             outputs = self.model(x)
             loss = self.criterion(outputs, y)
-            
             total_loss += loss.item()
+            
+            preds = torch.argmax(outputs, dim=1)
+            seg_metrics.update(preds, y)
         
-        return total_loss / len(self.dataloaders['val'])
+        avg_loss = total_loss / len(self.dataloaders['val'])
+        metrics = seg_metrics.compute()
+        
+        return avg_loss, metrics
     
     def _warmup_mps(self):
         """Warm up MPS shaders to avoid JIT compilation delay during training."""
@@ -335,19 +368,22 @@ class SeismicTrainer:
         
         # Training loop
         best_val_loss = float('inf')
+        best_val_iou = 0.0
         patience_counter = 0
         epoch_times = []
         
         for epoch in range(start_epoch, self.config.n_epochs):
             epoch_start = datetime.now()
             
-            # Train
-            train_loss = self.train_epoch(verbose=verbose)
+            # Train with metrics
+            train_loss, train_metrics = self.train_epoch(verbose=verbose)
             logger.info(f"Epoch {epoch+1}/{self.config.n_epochs} - Train Loss: {train_loss:.4f}")
+            logger.info(f"  Train IoU: {train_metrics['mean_iou']:.4f}, Train Acc: {train_metrics['accuracy']:.4f}")
             
-            # Validate
-            val_loss = self.validate(verbose=verbose)
+            # Validate with metrics
+            val_loss, val_metrics = self.validate(verbose=verbose)
             logger.info(f"Epoch {epoch+1}/{self.config.n_epochs} - Val Loss: {val_loss:.4f}")
+            logger.info(f"  Val IoU: {val_metrics['mean_iou']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}")
             
             # Update scheduler
             if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -357,48 +393,82 @@ class SeismicTrainer:
             
             current_lr = self.optimizer.param_groups[0]['lr']
             
-            # === LOGGING ===
+            # === LOGGING: LEVEL 1 & 2 METRICS ===
             
-            # Loss (TensorBoard)
+            # 1. Loss (TensorBoard + MLflow)
             self.writer.add_scalar("Loss/train", train_loss, epoch)
             self.writer.add_scalar("Loss/val", val_loss, epoch)
             self.writer.add_scalar("Metrics/lr", current_lr, epoch)
             
-            # Loss (MLflow)
-            self.mlflow_manager.log_metrics({
-                'train_loss': train_loss,
-                'val_loss': val_loss,
-                'lr': current_lr
-            }, step=epoch)
+            # 2. Segmentation Metrics (TensorBoard + MLflow)
+            self.writer.add_scalar("Metrics/train_iou", train_metrics['mean_iou'], epoch)
+            self.writer.add_scalar("Metrics/train_f1", train_metrics['mean_f1'], epoch)
+            self.writer.add_scalar("Metrics/train_accuracy", train_metrics['accuracy'], epoch)
             
-            # Memory (if enabled)
+            self.writer.add_scalar("Metrics/val_iou", val_metrics['mean_iou'], epoch)
+            self.writer.add_scalar("Metrics/val_f1", val_metrics['mean_f1'], epoch)
+            self.writer.add_scalar("Metrics/val_accuracy", val_metrics['accuracy'], epoch)
+            
+            # 3. Class-wise IoU (TensorBoard + MLflow)
+            for i, iou in enumerate(val_metrics['iou_per_class']):
+                self.writer.add_scalar(f"Metrics/class_{i}_iou", iou, epoch)
+            
+            # 4. Memory (if enabled)
+            memory = {}
             if self.config.log_memory:
                 memory = self.get_memory_usage()
                 if memory:
                     self.writer.add_scalar("Memory/allocated_GB", memory['allocated'], epoch)
-                    self.mlflow_manager.log_metrics({
-                        'memory_allocated_gb': memory['allocated'],
-                        'memory_max_gb': memory.get('max_allocated', memory['allocated'])
-                    }, step=epoch)
+                    self.writer.add_scalar("Memory/max_GB", memory.get('max_allocated', memory['allocated']), epoch)
                     logger.info(f"📊 Memory: allocated={memory['allocated']:.2f} GB")
+            
+            # 5. Gradient & Weight Norms (every 5 epochs)
+            if epoch % 5 == 0:
+                grad_norm = compute_gradient_norm(self.model)
+                weight_norm = compute_weight_norm(self.model)
+                self.writer.add_scalar("Norms/gradient", grad_norm, epoch)
+                self.writer.add_scalar("Norms/weights", weight_norm, epoch)
+            
+            # 6. MLflow Logging
+            mlflow_metrics = {
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'train_iou': train_metrics['mean_iou'],
+                'val_iou': val_metrics['mean_iou'],
+                'train_f1': train_metrics['mean_f1'],
+                'val_f1': val_metrics['mean_f1'],
+                'train_accuracy': train_metrics['accuracy'],
+                'val_accuracy': val_metrics['accuracy'],
+                'lr': current_lr,
+            }
+            
+            # Add class-wise IoU
+            for i, iou in enumerate(val_metrics['iou_per_class']):
+                mlflow_metrics[f'val_class_{i}_iou'] = iou
+            
+            # Add memory
+            if self.config.log_memory and memory:
+                mlflow_metrics['memory_allocated_gb'] = memory['allocated']
+                mlflow_metrics['memory_max_gb'] = memory.get('max_allocated', memory['allocated'])
             
             # Training time
             epoch_duration = (datetime.now() - epoch_start).total_seconds()
             epoch_times.append(epoch_duration)
-            self.mlflow_manager.log_metrics({
-                'epoch_duration_seconds': epoch_duration
-            }, step=epoch)
-            logger.info(f"⏱️ Epoch duration: {epoch_duration:.1f}s")
+            mlflow_metrics['epoch_duration_seconds'] = epoch_duration
             
+            self.mlflow_manager.log_metrics(mlflow_metrics, step=epoch)
+            
+            logger.info(f"⏱️ Epoch duration: {epoch_duration:.1f}s")
             logger.info(f"Epoch {epoch+1} - LR: {current_lr:.6f}")
             
-            # Early stopping
+            # Early stopping with IoU
             if self.config.early_stopping_patience is not None:
-                if val_loss < best_val_loss - self.config.early_stopping_min_delta:
+                current_val_iou = val_metrics['mean_iou']
+                if current_val_iou > best_val_iou + self.config.early_stopping_min_delta:
+                    best_val_iou = current_val_iou
                     best_val_loss = val_loss
                     patience_counter = 0
-                    logger.info(f"New best val_loss: {best_val_loss:.4f}")
-                    # Save best model
+                    logger.info(f"New best val IoU: {best_val_iou:.4f}")
                     self._save_best_model(best_val_loss)
                 else:
                     patience_counter += 1
@@ -406,7 +476,7 @@ class SeismicTrainer:
                         logger.info(f"Early stopping triggered at epoch {epoch+1}")
                         break
             
-            # Checkpoint (save to registry)
+            # Checkpoint
             if (epoch + 1) % self.config.checkpoint_every == 0:
                 self._save_checkpoint(epoch + 1, train_loss, val_loss)
             
@@ -436,6 +506,7 @@ class SeismicTrainer:
         logger.info(f"Model: {self.model_name}")
         logger.info(f"Epochs: {len(epoch_times)}")
         logger.info(f"Best val_loss: {best_val_loss:.4f}")
+        logger.info(f"Best val IoU: {best_val_iou:.4f}")
         if self.config.log_memory:
             logger.info(f"Peak memory: {self.get_memory_usage().get('max_allocated', 0):.2f} GB")
         logger.info(f"Total training time: {total_time:.1f}s")

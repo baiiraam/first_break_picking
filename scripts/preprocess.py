@@ -165,7 +165,7 @@ def main(config: str, force: bool, dataset: str):
                     cfg.target_traces, cfg.n_samples
                 )
                 
-                processed_data, processed_mask = processor.process_shot(shot_data, shot_picks)
+                processed_data, processed_mask, stats = processor.process_shot(shot_data, shot_picks)
                 data_batch[i] = processed_data
                 mask_batch[i] = processed_mask
             
@@ -217,7 +217,12 @@ def main(config: str, force: bool, dataset: str):
     logger.info(f"Total chunks: {processed_chunks}")
     logger.info(f"Chunk directory: {chunk_dir}")
     logger.info(f"Manifest: {manifest_path}")
-    logger.info(f"Log file: {logger._core.handlers[1]._path}")
+    log_path = "logs/"
+    try:
+        log_path = str(logger._core.handlers[1]._path)
+    except:
+        pass
+    logger.info(f"Log file: {log_path}")
     logger.info("=" * 60)
 
 

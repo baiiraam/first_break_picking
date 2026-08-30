@@ -1,5 +1,5 @@
 """
-Chunked dataset for memory-efficient training.
+Chunked dataset for memory-efficient training with level-based telemetry.
 """
 
 import torch
@@ -9,10 +9,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from loguru import logger
 
+from src.data.cache import LRUCache
+
 
 class ChunkedSeismicDataset(Dataset):
     """
     Memory-efficient dataset that loads chunks on-demand with LRU caching.
+    
+    Logging:
+        - INFO: Dataset init, chunk loads, evictions
+        - DEBUG: Every __getitem__ call with resolved indices
     """
     
     def __init__(
@@ -28,6 +34,8 @@ class ChunkedSeismicDataset(Dataset):
         self.split = split
         self.cache_size = cache_size
         self.shuffle_chunks = shuffle_chunks
+        
+        logger.debug(f"[Dataset] INIT split={split} | cache_size={cache_size}")
         
         # Get chunks for this split
         self.chunks = [c for c in manifest['chunks'] if c['split'] == split]
@@ -54,10 +62,10 @@ class ChunkedSeismicDataset(Dataset):
         self.target_traces = manifest['config']['target_traces']
         
         # Cache: chunk_idx -> (data_tensor, mask_tensor)
-        self.cache = {}
-        self.cache_order = []  # LRU order
+        self.cache = LRUCache(max_size=cache_size)
+        self.cache_order = []  # LRU order for tracking
         
-        logger.info(f"ChunkedDataset initialized: {len(self)} samples, {len(self.chunks)} chunks")
+        logger.info(f"[Dataset] Ready: {len(self)} samples, {len(self.chunks)} chunks, cache_size={cache_size}")
     
     def __len__(self) -> int:
         return len(self.global_index)
@@ -65,16 +73,22 @@ class ChunkedSeismicDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         chunk_idx = self.chunk_indices[idx]
         local_idx = self.chunk_offsets[idx]
+        shot_id = self.shot_ids[idx]
+        
+        logger.debug(f"[Dataset] GET idx={idx} → chunk={chunk_idx}, local={local_idx}, shot={shot_id}")
         
         # Load chunk if not in cache
         if chunk_idx not in self.cache:
+            logger.debug(f"[Dataset] CHUNK {chunk_idx} NOT in cache → loading")
             self._load_chunk(chunk_idx)
+        else:
+            logger.debug(f"[Dataset] CHUNK {chunk_idx} in cache (hit)")
         
-        # Get sample
-        data = self.cache[chunk_idx]['data'][local_idx]
-        mask = self.cache[chunk_idx]['mask'][local_idx]
+        # ✅ FIX: Use .get() method
+        cached_item = self.cache.get(chunk_idx)
+        data = cached_item['data'][local_idx]
+        mask = cached_item['mask'][local_idx]
         
-        # Add channel dimension: (1, 1578, 751)
         return data.unsqueeze(0).contiguous(), mask.contiguous()
     
     def _load_chunk(self, chunk_idx: int):
@@ -82,41 +96,33 @@ class ChunkedSeismicDataset(Dataset):
         chunk = self.chunks[chunk_idx]
         chunk_path = self.chunk_dir / chunk['filename']
         
-        # Load chunk
+        logger.info(f"[Dataset] LOAD chunk {chunk_idx}: {chunk_path.name}")
+        
         chunk_data = torch.load(chunk_path, map_location='cpu', weights_only=False)
         
-        # Store in cache
-        self.cache[chunk_idx] = {
-            'data': chunk_data['data'],  # (n_shots, target_traces, n_samples)
-            'mask': chunk_data['mask'],   # (n_shots, target_traces, n_samples)
+        self.cache.put(chunk_idx, {
+            'data': chunk_data['data'],
+            'mask': chunk_data['mask'],
             'shot_ids': chunk_data['shot_ids']
-        }
+        })
         self.cache_order.append(chunk_idx)
         
-        # Evict oldest if cache is full
-        if len(self.cache) > self.cache_size:
-            evict_idx = self.cache_order.pop(0)
-            if evict_idx in self.cache:
-                # Move to CPU before deleting to free memory
-                del self.cache[evict_idx]
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                logger.debug(f"Evicted chunk {evict_idx} from cache")
-        
-        logger.debug(f"Loaded chunk {chunk_idx} ({chunk['filename']})")
+        # Log cache stats after load
+        stats = self.cache.get_stats()
+        logger.info(f"[Dataset] CACHE: {stats['size']}/{stats['max_size']} | hit_rate={stats['hit_rate']:.1%}")
     
     def get_shot_id(self, idx: int) -> int:
-        """Get shot ID for a given index."""
         return self.shot_ids[idx]
     
     def get_chunk_stats(self) -> Dict[str, Any]:
-        """Get statistics about chunks."""
-        return {
+        stats = {
             'total_chunks': len(self.chunks),
             'total_samples': len(self),
-            'cache_size': len(self.cache),
+            'cache_size': self.cache.get_stats(),
             'chunk_sizes': [c['n_shots'] for c in self.chunks]
         }
+        logger.debug(f"[Dataset] STATS: {stats}")
+        return stats
 
 
 class ChunkedDataManager:
@@ -134,11 +140,15 @@ class ChunkedDataManager:
         self.cache_size = cache_size
         self.shuffle_chunks = shuffle_chunks
         
+        logger.debug(f"[Manager] INIT cache_size={cache_size}")
         self._datasets = {}
     
     def get_dataset(self, split: str) -> ChunkedSeismicDataset:
         """Get dataset for a specific split."""
+        logger.debug(f"[Manager] GET_DATASET split={split}")
+        
         if split not in self._datasets:
+            logger.debug(f"[Manager] Creating new dataset for split={split}")
             self._datasets[split] = ChunkedSeismicDataset(
                 self.chunk_dir,
                 self.manifest,

@@ -3,3 +3,62 @@
 dataset_name: "Sudbury"
 hdf5_path: "data/raw/preprocessed_Sudbury3D.hdf"
 chunk_dir: "data/chunks"
+preprocess: false
+force_reprocess: false
+
+# === Data ===
+target_traces: 1138              # ✅ Verified
+n_samples: 1001                  # ✅ Verified
+strip_width: 8
+chunk_size: 69
+random_seed: 42
+train_split: 0.8
+val_split: 0.1
+test_split: 0.1
+
+# === Training ===
+batch_size: 4
+learning_rate: 0.001
+n_epochs: 30
+device: "mps"
+num_workers: 4
+multi_gpu: false
+gpu_ids: null
+
+# === Loss ===
+class_weights: [0.1, 0.1, 0.8]
+
+# === Model Registry ===
+model_registry_dir: "models/registry"
+checkpoint_dir: "models/registry"
+checkpoint_every: 5
+
+# === Cache ===
+cache_size: 5
+
+# === Scheduler ===
+lr_scheduler: "plateau"
+lr_patience: 3
+lr_factor: 0.5
+lr_step_size: 10
+lr_gamma: 0.5
+lr_T_max: 30
+
+# === Regularization ===
+gradient_clip_value: 1.0
+
+# === Early Stopping ===
+early_stopping_patience: 5
+early_stopping_min_delta: 0.0001
+
+# === Logging ===
+tensorboard_log_dir: "runs"
+mlflow_experiment_name: "seismic-fbp"
+log_dir: "logs"
+log_level: "INFO"
+
+# === Debugging ===
+verbose_training: false
+log_batch_every: null
+log_memory: false
+log_predictions_every: 5

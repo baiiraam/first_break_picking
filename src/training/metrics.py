@@ -5,7 +5,9 @@ Evaluation metrics for seismic FBP.
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Dict, Any, Tuple, List
+from loguru import logger
 
 
 class SegmentationMetrics:
@@ -153,6 +155,37 @@ class FirstBreakMetrics:
             'total_traces': self.total_traces
         }
 
+
+def compute_gradient_norm(model: nn.Module) -> float:
+    """Compute the total gradient norm of all parameters."""
+    total_norm = 0.0
+    for p in model.parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    return total_norm ** 0.5
+
+
+def compute_weight_norm(model: nn.Module) -> float:
+    """Compute the total weight norm of all parameters."""
+    total_norm = 0.0
+    for p in model.parameters():
+        param_norm = p.data.norm(2)
+        total_norm += param_norm.item() ** 2
+    return total_norm ** 0.5
+
+
+def compute_layerwise_norms(model: nn.Module) -> Dict[str, float]:
+    """Compute weight and gradient norms per layer."""
+    norms = {}
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            norms[f'weights_{name}'] = p.data.norm(2).item()
+            if p.grad is not None:
+                norms[f'grads_{name}'] = p.grad.data.norm(2).item()
+    return norms
+
+
 class ComboLoss(nn.Module):
     def __init__(self, class_weights, dice_weight=0.5, focal_gamma=2.0):
         super().__init__()
@@ -177,6 +210,7 @@ class ComboLoss(nn.Module):
         dice_loss = 1 - dice.mean()
         
         return (1 - self.dice_weight) * (0.5 * ce_loss + 0.5 * focal_loss) + self.dice_weight * dice_loss
+
 
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
     """

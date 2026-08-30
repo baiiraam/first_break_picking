@@ -1,52 +1,45 @@
 # ============================================================
 # HALFMILE DATASET CONFIGURATION
 # ============================================================
-# This file overrides default.yaml for the Halfmile dataset.
 
-dataset_name: "Halfmile"          # Changed from "default"
+# === Dataset ===
+dataset_name: "Halfmile"
+hdf5_path: "data/raw/Halfmile3D_add_geom_sorted.hdf5"
+chunk_dir: "data/chunks"
+preprocess: false
+force_reprocess: false
 
-# ============================================================
-# DATA PATHS - YOU MUST UPDATE THESE!
-# ============================================================
-hdf5_path: "data/raw/Halfmile3D_add_geom_sorted.hdf5"  # Path to HDF5 file
-chunk_dir: "data/chunks"          # Where to save chunks
-
-# ============================================================
-# DATA PARAMETERS - CRITICAL! DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!
-# ============================================================
-target_traces: 1578               # Matches Halfmile dataset
-n_samples: 751                    # Matches Halfmile dataset
-strip_width: 8                    # Can change this for experiments!
-chunk_size: 69                    # Can change this to adjust memory usage
+# === Data ===
+target_traces: 1578
+n_samples: 751
+strip_width: 8
+chunk_size: 69
 random_seed: 42
-
-# ============================================================
-# TRAIN/VAL/TEST SPLIT
-# ============================================================
 train_split: 0.8
 val_split: 0.1
 test_split: 0.1
-force_reprocess: false            # Set to true to re-preprocess
 
-# ============================================================
-# TRAINING PARAMETERS - FREQUENTLY CHANGED
-# ============================================================
-batch_size: 4                     # Increase for faster training (if GPU memory allows)
-learning_rate: 0.001              # Try 0.0001 if loss plateau
-n_epochs: 2                      # Increase to 50 for better convergence
-device: "mps"                     # "cpu", "cuda", or "mps"
-num_workers: 0                    # Increase if you have more CPU cores
-checkpoint_every: 1
-
-# ============================================================
-# GPU PARAMETERS
-# ============================================================
+# === Training ===
+batch_size: 4
+learning_rate: 0.001
+n_epochs: 30
+device: "mps"
+num_workers: 4
 multi_gpu: false
 gpu_ids: null
 
-# ============================================================
-# LEARNING RATE SCHEDULER
-# ============================================================
+# === Loss ===
+class_weights: [0.1, 0.1, 0.8]
+
+# === Model Registry ===
+model_registry_dir: "models/registry"
+checkpoint_dir: "models/registry"
+checkpoint_every: 5
+
+# === Cache ===
+cache_size: 5
+
+# === Scheduler ===
 lr_scheduler: "plateau"
 lr_patience: 3
 lr_factor: 0.5
@@ -54,21 +47,21 @@ lr_step_size: 10
 lr_gamma: 0.5
 lr_T_max: 30
 
-# ============================================================
-# REGULARIZATION
-# ============================================================
+# === Regularization ===
 gradient_clip_value: 1.0
 
-# ============================================================
-# EARLY STOPPING
-# ============================================================
+# === Early Stopping ===
 early_stopping_patience: 5
 early_stopping_min_delta: 0.0001
 
-# ============================================================
-# LOGGING
-# ============================================================
+# === Logging ===
 tensorboard_log_dir: "runs"
 mlflow_experiment_name: "seismic-fbp"
-checkpoint_dir: "checkpoints"
 log_dir: "logs"
+log_level: "INFO"
+
+# === Debugging ===
+verbose_training: false
+log_batch_every: null
+log_memory: false
+log_predictions_every: 5

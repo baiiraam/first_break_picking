@@ -21,7 +21,11 @@ from src.utils.logger import setup_logger, create_task_name
 from src.data.chunked_dataset import ChunkedDataManager
 from src.preprocessing.manifest import load_manifest
 from src.models.mps_light_unet import MPSLightUNet
-from src.training.metrics import SegmentationMetrics, FirstBreakMetrics
+from src.training.metrics import (
+    SegmentationMetrics,
+    FirstBreakMetrics,
+    extract_picks_from_mask
+)
 
 
 @click.command()
@@ -30,7 +34,8 @@ from src.training.metrics import SegmentationMetrics, FirstBreakMetrics
 @click.option('--output', '-o', default='evaluation_results', help='Output directory for results')
 @click.option('--device', '-d', default='mps', help='Device to use (cpu/cuda/mps)')
 @click.option('--batch_size', '-b', default=4, help='Batch size for evaluation')
-def main(config: str, model: str, output: str, device: str, batch_size: int):
+@click.option('--dataset', '-ds', help='Override dataset name (for logging)')
+def main(config: str, model: str, output: str, device: str, batch_size: int, dataset: str):
     """Evaluate the trained model on test set."""
     
     # Load config
@@ -41,7 +46,11 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     cfg.device = device
     cfg.batch_size = batch_size
     
-    # Setup logger with task name
+    # Override dataset name if provided
+    if dataset:
+        cfg.dataset_name = dataset
+    
+    # Setup logger with dynamic task name
     task_name = create_task_name(cfg, "evaluate")
     logger = setup_logger(task_name=task_name)
     
@@ -100,7 +109,10 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     
     # Initialize metrics
     seg_metrics = SegmentationMetrics(num_classes=3)
-    fb_metrics = FirstBreakMetrics()
+    fb_metrics = FirstBreakMetrics(tolerance_samples=3)
+    
+    all_predictions = []
+    all_labels = []
     
     # Evaluate
     logger.info("\nRunning evaluation...")
@@ -112,18 +124,49 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
             outputs = model_obj(x)
             preds = torch.argmax(outputs, dim=1)
             
-            # Update metrics
+            # Update segmentation metrics
             seg_metrics.update(preds, y)
+            
+            # Extract picks for first-break metrics
+            pred_picks = extract_picks_from_mask(preds.cpu().numpy())
+            true_picks = extract_picks_from_mask(y.cpu().numpy())
+            fb_metrics.update(pred_picks, true_picks)
+            
+            # Store for later
+            all_predictions.append(preds.cpu().numpy())
+            all_labels.append(y.cpu().numpy())
     
-    # Compute metrics
+    # Compute all metrics
+    seg_results = seg_metrics.compute()
+    fb_results = fb_metrics.compute()
+    
+    # Log results
     logger.info("\n" + "=" * 60)
     logger.info("📊 SEGMENTATION METRICS")
     logger.info("=" * 60)
+    logger.info(f"  Accuracy: {seg_results['accuracy']:.4f}")
+    logger.info(f"  Mean IoU: {seg_results['mean_iou']:.4f}")
+    logger.info(f"  Mean F1: {seg_results['mean_f1']:.4f}")
     
-    seg_results = seg_metrics.compute()
-    for metric_name, value in seg_results.items():
-        if not isinstance(value, list):
-            logger.info(f"  {metric_name}: {value:.4f}")
+    logger.info("\n  Class-wise IoU:")
+    class_names = ["Class 0 (Before)", "Class 1 (After)", "Class 2 (Strip)"]
+    for i, (name, iou) in enumerate(zip(class_names, seg_results['iou_per_class'])):
+        logger.info(f"    {name}: {iou:.4f}")
+    
+    logger.info("\n  Class-wise F1:")
+    for i, (name, f1) in enumerate(zip(class_names, seg_results['f1_per_class'])):
+        logger.info(f"    {name}: {f1:.4f}")
+    
+    logger.info("\n" + "=" * 60)
+    logger.info("📊 FIRST-BREAK METRICS")
+    logger.info("=" * 60)
+    logger.info(f"  Mean Absolute Error (MAE): {fb_results['mean_absolute_error']:.2f} samples")
+    logger.info(f"  Std Absolute Error: {fb_results['std_absolute_error']:.2f} samples")
+    logger.info(f"  Median Absolute Error: {fb_results['median_absolute_error']:.2f} samples")
+    logger.info(f"  Max Absolute Error: {fb_results['max_absolute_error']:.2f} samples")
+    logger.info(f"  Min Absolute Error: {fb_results['min_absolute_error']:.2f} samples")
+    logger.info(f"  Accuracy within ±3 samples: {fb_results['accuracy_within_tolerance']:.2%}")
+    logger.info(f"  Total traces evaluated: {fb_results['total_traces']}")
     
     # Save results
     output_dir = Path(output)
@@ -131,6 +174,7 @@ def main(config: str, model: str, output: str, device: str, batch_size: int):
     
     results = {
         'segmentation_metrics': seg_results,
+        'first_break_metrics': fb_results,
         'config': cfg.to_dict(),
         'model_path': model,
         'dataset': cfg.dataset_name,

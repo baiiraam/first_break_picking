@@ -25,6 +25,10 @@ checkpoints/*.pt
 # Logs
 *.log
 
+*.pt
+
+*.png
+
 # TensorBoard
 runs/
 
