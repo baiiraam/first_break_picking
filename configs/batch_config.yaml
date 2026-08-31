@@ -1,0 +1,137 @@
+# ============================================================
+# BATCH TRAINING CONFIGURATION
+# ============================================================
+# This file controls the batch training pipeline with memory error recovery.
+# 
+# Sections:
+#   1. global: Settings applied to all datasets
+#   2. datasets: Per-dataset overrides
+#   3. variants: Memory error recovery fallback configurations
+#   4. monitoring: Memory thresholds and logging
+# ============================================================
+
+# ============================================================
+# SECTION 1: GLOBAL SETTINGS
+# ============================================================
+global:
+  # Training parameters
+  epochs: 30
+  device: "mps"                    # cpu, cuda, mps
+  log_memory: true
+  verbose: false
+  log_level: "INFO"                # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  preprocess: false
+  checkpoint_every: 1
+  early_stopping: 5
+  
+  # Batch pipeline settings
+  timeout_seconds: 7200            # 2 hours per dataset
+  skip_failed: true                # Continue if a dataset fails
+  max_retries: 3                   # Per config variant
+  clear_memory_between_datasets: true
+  pause_between_datasets: 2        # Seconds
+
+# ============================================================
+# SECTION 2: DATASET-SPECIFIC OVERRIDES
+# ============================================================
+datasets:
+  # Each dataset can override global settings
+  Brunswick:
+    epochs: 40                     # Override global 30
+    log_memory: true
+    # Uses default device: mps
+    
+  Halfmile:
+    device: "mps"
+    log_level: "DEBUG"             # More verbose for debugging
+    # Uses default epochs: 30
+    
+  Lalor:
+    batch_size_override: 2         # Force smaller batch size for large dataset
+    model_override: "tiny"         # Force smaller model
+    log_memory: false
+    preprocess: true
+    timeout_seconds: 10800         # 3 hours (Lalor is big)
+    
+  Sudbury:
+    epochs: 25
+    device: "cpu"                  # Train on CPU
+    # Uses defaults for everything else
+
+# ============================================================
+# SECTION 3: MEMORY ERROR RECOVERY VARIANTS
+# ============================================================
+# These are tried in order when a memory error occurs.
+# The first successful variant is used.
+variants:
+  # Attempt 1: Full capacity
+  - batch_size: 4
+    model: "mpslight"
+    cache_size: 3
+    class_weights: "0.1,0.1,0.8"
+    strip_width: 8
+    memory_limit_gb: 8
+  
+  # Attempt 2: Reduced batch size
+  - batch_size: 2
+    model: "mpslight"
+    cache_size: 2
+    class_weights: "0.1,0.1,0.8"
+    strip_width: 8
+    memory_limit_gb: 6
+  
+  # Attempt 3: Batch size 1
+  - batch_size: 1
+    model: "mpslight"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  
+  # Attempt 4: Tiny model
+  - batch_size: 1
+    model: "tiny"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  
+  # Attempt 5: Nano model
+  - batch_size: 1
+    model: "nano"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  
+  # Attempt 6: Pico model (last resort)
+  - batch_size: 1
+    model: "pico"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 2
+
+# ============================================================
+# SECTION 4: MONITORING & NOTIFICATIONS
+# ============================================================
+monitoring:
+  memory_warning_threshold_gb: 16.0
+  memory_critical_threshold_gb: 20.0
+  system_memory_percent_warning: 80
+  system_memory_percent_critical: 90
+  
+  # Email notifications (optional)
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    sender: "your_email@gmail.com"
+    recipient: "your_team@company.com"
+    password_env_var: "EMAIL_PASSWORD"
+  
+  # Slack notifications (optional)
+  slack:
+    enabled: false
+    webhook_url_env_var: "SLACK_WEBHOOK_URL"
+    channel: "#ml-training"
