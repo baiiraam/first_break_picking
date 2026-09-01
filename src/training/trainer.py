@@ -205,6 +205,15 @@ class SeismicTrainer:
         if self.device.type == "mps":
             torch.mps.empty_cache()
 
+        loss_components = {
+        'total': 0.0,
+        'ce': 0.0,
+        'focal': 0.0,
+        'dice': 0.0,
+        'ce_focal_combined': 0.0,
+        'per_class': {},
+        }
+        num_batches = 0
         pbar = tqdm(self.dataloaders["train"], desc="Training")
 
         for batch_idx, (x, y) in enumerate(pbar):
@@ -216,7 +225,22 @@ class SeismicTrainer:
             self.optimizer.zero_grad()
             outputs = self.model(x)
 
-            loss = self.criterion(outputs, y)
+            if hasattr(self.criterion, 'return_components'):
+                self.criterion.return_components = True
+                loss, components = self.criterion(outputs, y)
+                # Accumulate component losses
+                loss_components['total'] += components['total']
+                loss_components['ce'] += components['ce']
+                loss_components['focal'] += components['focal']
+                loss_components['dice'] += components['dice']
+                loss_components['ce_focal_combined'] += components['ce_focal_combined']
+                for class_name, class_loss in components['per_class'].items():
+                    if class_name not in loss_components['per_class']:
+                        loss_components['per_class'][class_name] = 0.0
+                    loss_components['per_class'][class_name] += class_loss
+            else:
+                loss = self.criterion(outputs, y)
+        
             loss.backward()
 
             if self.config.gradient_clip_value is not None:
@@ -227,6 +251,7 @@ class SeismicTrainer:
 
             self.optimizer.step()
             total_loss += loss.item()
+            num_batches += 1
 
             # Update segmentation metrics
             preds = torch.argmax(outputs, dim=1)
@@ -241,6 +266,13 @@ class SeismicTrainer:
 
         avg_loss = total_loss / len(self.dataloaders["train"])
         metrics = seg_metrics.compute()
+
+        if num_batches > 0 and hasattr(self.criterion, 'return_components'):
+            for key in ['total', 'ce', 'focal', 'dice', 'ce_focal_combined']:
+                metrics[f'loss_{key}'] = loss_components[key] / num_batches
+        
+            for class_name, class_loss in loss_components['per_class'].items():
+                metrics[f'loss_{class_name}'] = class_loss / num_batches
 
         return avg_loss, metrics
 
@@ -260,6 +292,15 @@ class SeismicTrainer:
         if self.device.type == "mps":
             torch.mps.empty_cache()
 
+        loss_components = {
+        'total': 0.0,
+        'ce': 0.0,
+        'focal': 0.0,
+        'dice': 0.0,
+        'ce_focal_combined': 0.0,
+        'per_class': {},
+        }
+        num_batches = 0
         pbar = tqdm(self.dataloaders["val"], desc="Validation")
 
         for x, y in pbar:
@@ -269,14 +310,38 @@ class SeismicTrainer:
             y = y.contiguous()
 
             outputs = self.model(x)
-            loss = self.criterion(outputs, y)
+            if hasattr(self.criterion, 'return_components'):
+                self.criterion.return_components = True
+                loss, components = self.criterion(outputs, y)
+                # Accumulate component losses
+                loss_components['total'] += components['total']
+                loss_components['ce'] += components['ce']
+                loss_components['focal'] += components['focal']
+                loss_components['dice'] += components['dice']
+                loss_components['ce_focal_combined'] += components['ce_focal_combined']
+                for class_name, class_loss in components['per_class'].items():
+                    if class_name not in loss_components['per_class']:
+                        loss_components['per_class'][class_name] = 0.0
+                    loss_components['per_class'][class_name] += class_loss
+            else:
+                loss = self.criterion(outputs, y)
+            
             total_loss += loss.item()
-
+            num_batches += 1
+            
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
 
         avg_loss = total_loss / len(self.dataloaders["val"])
         metrics = seg_metrics.compute()
+
+        if num_batches > 0 and hasattr(self.criterion, 'return_components'):
+            for key in ['total', 'ce', 'focal', 'dice', 'ce_focal_combined']:
+                metrics[f'val_loss_{key}'] = loss_components[key] / num_batches
+        
+            for class_name, class_loss in loss_components['per_class'].items():
+                metrics[f'val_loss_{class_name}'] = class_loss / num_batches
+
 
         return avg_loss, metrics
 
@@ -625,9 +690,6 @@ class SeismicTrainer:
             # === LOGGING ===
             # Manual logging (for metrics not covered by autologging)
             self.writer.add_scalar("Loss/train", train_loss, epoch)
-            self.writer.add_scalar("Loss/val", val_loss, epoch)
-            self.writer.add_scalar("Metrics/lr", current_lr, epoch)
-
             self.writer.add_scalar(
                 "Metrics/train_iou", train_metrics["mean_iou"], epoch
             )
@@ -635,11 +697,46 @@ class SeismicTrainer:
             self.writer.add_scalar(
                 "Metrics/train_accuracy", train_metrics["accuracy"], epoch
             )
+
+            if 'loss_ce' in train_metrics:
+                self.writer.add_scalar("Loss/components/train_ce", train_metrics['loss_ce'], epoch)
+                self.writer.add_scalar("Loss/components/train_focal", train_metrics['loss_focal'], epoch)
+                self.writer.add_scalar("Loss/components/train_dice", train_metrics['loss_dice'], epoch)
+                self.writer.add_scalar("Loss/components/train_total", train_metrics['loss_total'], epoch)
+    
+                # Per-class losses
+                for key, value in train_metrics.items():
+                    if key.startswith('loss_class_'):
+                        self.writer.add_scalar(f"Loss/per_class/train_{key}", value, epoch)
+                
+                # Strip loss (most important)
+                if 'loss_class_2' in train_metrics:
+                    self.writer.add_scalar("Loss/per_class/train_strip", train_metrics['loss_class_2'], epoch)
+
+
+            
+            self.writer.add_scalar("Loss/val", val_loss, epoch)
             self.writer.add_scalar("Metrics/val_iou", val_metrics["mean_iou"], epoch)
             self.writer.add_scalar("Metrics/val_f1", val_metrics["mean_f1"], epoch)
             self.writer.add_scalar(
                 "Metrics/val_accuracy", val_metrics["accuracy"], epoch
             )
+            self.writer.add_scalar("Metrics/lr", current_lr, epoch)
+            
+            if 'val_loss_ce' in val_metrics:
+                self.writer.add_scalar("Loss/components/val_ce", val_metrics['val_loss_ce'], epoch)
+                self.writer.add_scalar("Loss/components/val_focal", val_metrics['val_loss_focal'], epoch)
+                self.writer.add_scalar("Loss/components/val_dice", val_metrics['val_loss_dice'], epoch)
+                self.writer.add_scalar("Loss/components/val_total", val_metrics['val_loss_total'], epoch)
+                
+                # Per-class losses
+                for key, value in val_metrics.items():
+                    if key.startswith('val_loss_class_'):
+                        self.writer.add_scalar(f"Loss/per_class/val_{key}", value, epoch)
+                
+                # Strip loss (most important)
+                if 'val_loss_class_2' in val_metrics:
+                    self.writer.add_scalar("Loss/per_class/val_strip", val_metrics['val_loss_class_2'], epoch)
 
             for i, iou in enumerate(val_metrics["iou_per_class"]):
                 self.writer.add_scalar(f"Metrics/class_{i}_iou", iou, epoch)
@@ -683,7 +780,36 @@ class SeismicTrainer:
                     "max_allocated", memory["allocated"]
                 )
 
-            self.mlflow_manager.log_metrics(mlflow_metrics, step=epoch)
+            # Training component losses
+            if 'loss_ce' in train_metrics:
+                mlflow_metrics.update({
+                    'train_total_loss': train_metrics['loss_total'],
+                    'train_ce_loss': train_metrics['loss_ce'],
+                    'train_focal_loss': train_metrics['loss_focal'],
+                    'train_dice_loss': train_metrics['loss_dice'],
+                })
+                
+                # Per-class training losses
+                for key, value in train_metrics.items():
+                    if key.startswith('loss_class_'):
+                        mlflow_metrics[f'train_{key}'] = value
+            
+            # Validation component losses
+            if 'val_loss_ce' in val_metrics:
+                mlflow_metrics.update({
+                    'val_total_loss': val_metrics['val_loss_total'],
+                    'val_ce_loss': val_metrics['val_loss_ce'],
+                    'val_focal_loss': val_metrics['val_loss_focal'],
+                    'val_dice_loss': val_metrics['val_loss_dice'],
+                })
+                
+                # Per-class validation losses
+                for key, value in val_metrics.items():
+                    if key.startswith('val_loss_class_'):
+                        mlflow_metrics[f'val_{key}'] = value
+            
+            if mlflow_metrics:
+                self.mlflow_manager.log_metrics(mlflow_metrics, step=epoch)
 
             # Training time
             epoch_duration = (datetime.now(timezone.utc) - epoch_start).total_seconds()
