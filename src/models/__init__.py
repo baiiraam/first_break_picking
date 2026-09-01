@@ -1,2 +1,2 @@
 # Models module
-from src.models.mps_light_unet import MPSLightUNet
+from src.models.mps_light_unet import MPSLightUNet as MPSLightUNet
