@@ -1,637 +1,729 @@
-# 📚 Complete Documentation: Seismic FBP Pipeline with MLflow 3
-
-## Table of Contents
-1. [Project Overview](#project-overview)
-2. [Installation](#installation)
-3. [Quick Start](#quick-start)
-4. [MLflow Features](#mlflow-features)
-5. [Scripts Reference](#scripts-reference)
-6. [Configuration](#configuration)
-7. [Monitoring](#monitoring)
-8. [Troubleshooting](#troubleshooting)
-
----
+# Complete Project Documentation
 
 ## Project Overview
 
-This is a **production-grade seismic first-break picking pipeline** using PyTorch with full MLflow 3 integration. It supports:
-
-- **4 seismic datasets** (Halfmile, Brunswick, Lalor, Sudbury)
-- **Multiple model architectures** (UNet, MPSLightUNet)
-- **Full MLflow 3 features**: Autologging, System Metrics, Model Registry, Checkpoint Tracking, Search & Comparison
-- **Apple Silicon (MPS) and NVIDIA GPU (CUDA) support**
-- **TensorBoard visualization**
-- **Wiggle plot visualization**
-
-### Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **Autologging** | Automatic logging of loss, LR, gradients, model architecture |
-| **System Metrics** | GPU/CPU utilization, memory, temperature monitoring |
-| **Model Registry** | Versioned models with tags and aliases |
-| **Model Aliases** | `champion`, `challenger`, `staging` for deployment |
-| **Checkpoint Tracking** | Link checkpoints to metrics with `step` parameter |
-| **Search & Comparison** | Programmatically find best models |
-| **Multi-Dataset** | 4 datasets with per-dataset models |
+**First Break Picking (FBP)** - A production-ready machine learning pipeline for automatic detection of seismic first breaks using deep learning (U-Net architectures). The system processes seismic trace data from multiple real-world seismic assets, handles varying signal-to-noise ratios, and includes robust memory error recovery for batch training.
 
 ---
 
-## Installation
+## Project Structure
 
-### 1. Clone the Repository
-```bash
-git clone <repository-url>
-cd seismic_fbp
 ```
-
-### 2. Create Virtual Environment
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
-```
-
-### 3. Install Dependencies
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 4. Install PyTorch (Choose One)
-
-**For Apple Silicon (MPS):**
-```bash
-pip install torch torchvision torchaudio
-```
-
-**For NVIDIA GPU (CUDA):**
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-**For CPU only:**
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-```
-
-### 5. Set Up Data
-Place HDF5 files in `data/raw/`:
-```
-data/raw/
-├── Halfmile3D_add_geom_sorted.hdf5
-├── Brunswick_orig_1500ms_V2.hdf5
-├── Lalor_raw_z_1500ms_norp_geom_v3.hdf5
-└── preprocessed_Sudbury3D.hdf
-```
-
-### 6. Preprocess Datasets
-```bash
-# Preprocess all datasets
-python scripts/preprocess.py --config configs/halfmile.yaml
-python scripts/preprocess.py --config configs/brunswick.yaml
-python scripts/preprocess.py --config configs/lalor.yaml
-python scripts/preprocess.py --config configs/sudbury.yaml
-```
-
----
-
-## Quick Start
-
-### Train a Model
-```bash
-# Basic training (1 epoch test)
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model mpslight \
-    --epochs 1
-
-# Full training (30 epochs)
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model mpslight \
-    --epochs 30 \
-    --log-memory
-
-# Training with MLflow features
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model mpslight \
-    --epochs 30 \
-    --log-memory \
-    --search-best
-```
-
-### Evaluate a Model
-```bash
-# Load champion model (from MLflow registry)
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model best
-
-# Load specific checkpoint
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt
-```
-
-### Search for Best Models
-```bash
-# Top 5 models for Halfmile
-python scripts/search_models.py --dataset Halfmile --top 5 --compare
-
-# Models with IoU > 0.6
-python scripts/search_models.py --min-iou 0.6
-```
-
-### Visualize Results
-```bash
-python scripts/visualize.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --n_samples 10 \
-    --style wiggle
-```
-
-### View Monitoring
-```bash
-# TensorBoard
-tensorboard --logdir runs/Halfmile/MPSLightUNet
-
-# MLflow UI
-mlflow ui --backend-store-uri sqlite:///mlflow.db
+first_break_pick/
+│
+├── configs/                          # Configuration files
+│   ├── batch_config.yaml             # Batch training configuration
+│   ├── brunswick.yaml                # Brunswick dataset config
+│   ├── default.yaml                  # Default configuration template
+│   ├── experiment_001.yaml           # Experiment override example
+│   ├── halfmile.yaml                 # Halfmile dataset config
+│   ├── lalor.yaml                    # Lalor dataset config
+│   ├── production.yaml               # Production mode config
+│   └── sudbury.yaml                  # Sudbury dataset config
+│
+├── scripts/                          # Executable scripts
+│   ├── batch_train.py                # Batch training orchestrator
+│   ├── evaluate.py                   # Model evaluation script
+│   ├── export_model.py               # Model export (ONNX/TorchScript)
+│   ├── preprocess.py                 # Data preprocessing pipeline
+│   ├── search_models.py              # MLflow model search
+│   ├── train.py                      # Individual training script
+│   └── visualize.py                  # Result visualization
+│
+├── src/                              # Source code
+│   ├── __init__.py
+│   ├── config.py                     # Configuration management
+│   │
+│   ├── data/                         # Data handling
+│   │   ├── __init__.py
+│   │   ├── cache.py                  # LRU cache for chunked data
+│   │   ├── chunked_dataset.py        # Memory-efficient dataset
+│   │   └── hdf5_dataset.py           # HDF5 lazy loading
+│   │
+│   ├── models/                       # Model architectures
+│   │   ├── __init__.py
+│   │   ├── efficient_unet.py         # EfficientNet + U-Net
+│   │   ├── light_unet.py             # Lightweight U-Net
+│   │   ├── mobilenet.py              # MobileNet + U-Net
+│   │   ├── mps_light_unet.py         # MPS-optimized U-Net
+│   │   ├── nano_unet.py              # Ultra-lightweight U-Net
+│   │   ├── pico_unet.py              # Minimal U-Net
+│   │   ├── tiny_unet.py              # Tiny U-Net
+│   │   └── unet.py                   # Standard U-Net
+│   │
+│   ├── preprocessing/                # Data preprocessing
+│   │   ├── __init__.py
+│   │   ├── chunker.py                # Chunk assignment logic
+│   │   ├── manifest.py               # Manifest generation
+│   │   ├── processor.py              # Shot processing
+│   │   └── writer.py                 # Chunk writing
+│   │
+│   ├── training/                     # Training pipeline
+│   │   ├── __init__.py
+│   │   ├── callbacks.py              # Training callbacks
+│   │   ├── metrics.py                # Evaluation metrics
+│   │   └── trainer.py                # Main trainer class
+│   │
+│   └── utils/                        # Utility functions
+│       ├── __init__.py
+│       ├── hdf5_utils.py             # HDF5 file operations
+│       ├── logger.py                 # Loguru logging setup
+│       ├── memory_utils.py           # Memory management
+│       ├── mlflow_utils.py           # MLflow integration
+│       └── tensorboard_utils.py      # TensorBoard logging
+│
+├── data/                             # Data directory (created at runtime)
+│   ├── raw/                          # Raw HDF5 files
+│   └── chunks/                       # Preprocessed chunks
+│       ├── Brunswick/
+│       ├── Halfmile/
+│       ├── Lalor/
+│       └── Sudbury/
+│
+├── models/                           # Model storage
+│   └── registry/                     # Model checkpoints
+│
+├── logs/                             # Log files
+│   └── batch/                        # Batch training logs
+│
+├── runs/                             # TensorBoard logs
+│
+├── mlflow.db                         # MLflow SQLite database
+│
+├── requirements.txt                  # Python dependencies
+└── README.md                         # Project documentation
 ```
 
 ---
 
-## MLflow Features
+## Configuration Files
 
-### 1. Autologging
+### `configs/batch_config.yaml`
 
-Autologging is **enabled by default** in the `MLflowManager` class.
+The main batch training configuration file.
 
-```python
-# In your trainer, this happens automatically
-mlflow.pytorch.autolog(
-    log_models=True,
-    log_every_n_epoch=1,
-    log_every_n_step=10,
-    log_gradients=False,
-)
+```yaml
+# Global settings applied to all datasets
+global:
+  epochs: 30
+  device: "mps"
+  log_memory: true
+  verbose: false
+  log_level: "INFO"
+  preprocess: false
+  checkpoint_every: 5
+  early_stopping: 5
+  timeout_seconds: 7200
+  skip_failed: true
+  max_retries: 3
+  clear_memory_between_datasets: true
+  pause_between_datasets: 2
+
+# Dataset-specific overrides
+datasets:
+  Brunswick:
+    epochs: 40
+    log_memory: true
+  Halfmile:
+    log_level: "DEBUG"
+  Lalor:
+    batch_size_override: 2
+    model_override: "tiny"
+    timeout_seconds: 10800
+  Sudbury:
+    epochs: 25
+    device: "cpu"
+
+# Memory error recovery variants (tried in order)
+variants:
+  - batch_size: 4
+    model: "mpslight"
+    cache_size: 3
+    class_weights: "0.1,0.1,0.8"
+    strip_width: 8
+    memory_limit_gb: 8
+  - batch_size: 2
+    model: "mpslight"
+    cache_size: 2
+    class_weights: "0.1,0.1,0.8"
+    strip_width: 8
+    memory_limit_gb: 6
+  - batch_size: 1
+    model: "mpslight"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  - batch_size: 1
+    model: "tiny"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  - batch_size: 1
+    model: "nano"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 4
+  - batch_size: 1
+    model: "pico"
+    cache_size: 1
+    class_weights: "0.2,0.2,0.6"
+    strip_width: 8
+    memory_limit_gb: 2
+
+# Monitoring and notifications
+monitoring:
+  memory_warning_threshold_gb: 16.0
+  memory_critical_threshold_gb: 20.0
+  system_memory_percent_warning: 80
+  system_memory_percent_critical: 90
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    sender: "your_email@gmail.com"
+    recipient: "team@company.com"
+    password_env_var: "EMAIL_PASSWORD"
+  slack:
+    enabled: false
+    webhook_url_env_var: "SLACK_WEBHOOK_URL"
+    channel: "#ml-training"
 ```
 
-**What gets logged automatically:**
-- Loss values (per batch & per epoch)
-- Learning rate
-- Model architecture
-- Optimizer parameters
-- Gradient norms
-- Weight histograms
+### Dataset Config Files
 
-**Disable autologging:**
-```bash
-python scripts/train.py --config configs/halfmile.yaml --disable-autolog
-```
+Each dataset has its own configuration:
 
-### 2. System Metrics
+```yaml
+# configs/halfmile.yaml example
+dataset_name: "Halfmile"
+hdf5_path: "data/raw/Halfmile3D_add_geom_sorted.hdf5"
+chunk_dir: "data/chunks"
 
-System metrics are **enabled by default** on the GPU server.
+target_traces: 1578      # Number of traces per shot
+n_samples: 751           # Time samples per trace
+strip_width: 8           # Width of first-break strip
+chunk_size: 69           # Shots per chunk
 
-```python
-# In MLflowManager.__init__
-mlflow.enable_system_metrics_logging()
-```
+train_split: 0.8
+val_split: 0.1
+test_split: 0.1
 
-**What gets logged:**
-- GPU utilization (%)
-- GPU memory used (MB)
-- GPU temperature (°C)
-- GPU power draw (W)
-- CPU utilization (%)
-- Memory usage
+batch_size: 4
+learning_rate: 0.001
+n_epochs: 30
+device: "mps"
 
-**Disable system metrics:**
-```bash
-python scripts/train.py --config configs/halfmile.yaml --disable-system-metrics
-```
-
-### 3. Model Registry
-
-Models are automatically registered with the MLflow Model Registry.
-
-**Registered model naming:**
-```
-SeismicUNet_{dataset_name}
-Example: SeismicUNet_Halfmile
-```
-
-**Version tags:**
-| Tag | Value |
-|-----|-------|
-| `dataset` | Halfmile, Brunswick, Lalor, Sudbury |
-| `model_type` | MPSLightUNet, UNet, etc. |
-| `step` | Epoch number |
-| `timestamp` | ISO timestamp |
-
-### 4. Model Aliases
-
-The trainer automatically manages model aliases:
-
-| Alias | Purpose | When Assigned |
-|-------|---------|---------------|
-| **champion** | Best performing model | First run, then when new model beats current |
-| **challenger** | Candidate for promotion | Every new model version |
-| **staging** | Latest model | Every new model version |
-
-**Load champion model:**
-```bash
-# In evaluation
-python scripts/evaluate.py --config configs/halfmile.yaml --model best
-
-# In code
-model = mlflow.pytorch.load_model("models:/SeismicUNet_Halfmile@champion")
-```
-
-### 5. Checkpoint Tracking
-
-Checkpoints are logged with the `step` parameter linking them to metrics.
-
-```python
-# In trainer._log_model_checkpoint()
-model_info = mlflow.pytorch.log_model(
-    pytorch_model=model,
-    name="MPSLightUNet_Halfmile_epoch_5",
-    step=5,  # ← Links to epoch
-    registered_model_name="SeismicUNet_Halfmile",
-)
-
-# Metrics linked to this checkpoint
-mlflow.log_metrics(metrics, step=5, model_id=model_info.model_id)
-```
-
-### 6. Search & Comparison
-
-Use `search_models.py` to search and compare models:
-
-```bash
-# Search by dataset
-python scripts/search_models.py --dataset Halfmile
-
-# Search by model type
-python scripts/search_models.py --model-type MPSLightUNet
-
-# Search by minimum IoU
-python scripts/search_models.py --min-iou 0.6
-
-# Compare top 5 models
-python scripts/search_models.py --top 5 --compare
-```
-
-**Programmatic search:**
-```python
-from src.utils.mlflow_utils import get_mlflow_manager
-
-manager = get_mlflow_manager()
-
-# Find best models
-best_models = manager.search_models(
-    filter_string="tags.dataset = 'Halfmile'",
-    order_by=[{"field_name": "metrics.val_iou", "ascending": False}],
-    max_results=5,
-)
-
-# Load the best model
-best_model = mlflow.pytorch.load_model(f"models:/{best_models[0].model_id}")
+class_weights: [0.1, 0.1, 0.8]
+cache_size: 3
 ```
 
 ---
 
-## Scripts Reference
+## Scripts Documentation
 
-### `scripts/train.py`
+### 1. `scripts/batch_train.py`
 
-**Main training entry point.**
+**Purpose:** Orchestrates sequential training across multiple datasets with memory error recovery.
+
+**Usage:**
+```bash
+python scripts/batch_train.py [OPTIONS]
+```
+
+**Options:**
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--config` | `-c` | String | **Required** | Path to config YAML |
-| `--model` | `-m` | Choice | `unet` | Model architecture |
-| `--epochs` | `-e` | Integer | From config | Override epochs |
-| `--device` | `-d` | String | From config | `cpu`, `cuda`, `mps` |
-| `--resume` | `-r` | String | None | Resume from checkpoint |
+| `--config` | `-c` | String | `configs/batch_config.yaml` | Config file path |
+| `--datasets` | `-d` | Multiple | All | Datasets to train |
+| `--list-datasets` | - | Flag | False | List available datasets |
+| `--epochs` | `-e` | Integer | None | Override epochs |
+| `--device` | `-dev` | String | None | Override device |
+| `--log-memory` | `-lm` | Flag | False | Enable memory logging |
 | `--verbose` | `-v` | Flag | False | Enable verbose logging |
-| `--log-memory` | `-lm` | Flag | False | Log GPU memory usage |
-| `--log-level` | `-ll` | Choice | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `--disable-autolog` | - | Flag | False | Disable MLflow autologging |
-| `--disable-system-metrics` | - | Flag | False | Disable system metrics |
-| `--search-best` | - | Flag | False | Search for best model after training |
+| `--log-level` | `-ll` | String | None | Override log level |
 | `--preprocess` | `-p` | Flag | False | Force preprocessing |
-| `--dataset` | `-ds` | String | From config | Override dataset name |
-| `--class-weights` | `-cw` | 3 Floats | From config | Override class weights |
+| `--timeout` | `-t` | Integer | None | Override timeout |
 
 **Examples:**
 ```bash
-# Quick test
-python scripts/train.py --config configs/halfmile.yaml --epochs 1
+# Train all datasets
+python scripts/batch_train.py
 
-# Full training with MLflow
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model mpslight \
-    --epochs 30 \
-    --log-memory \
-    --search-best
+# Train specific datasets
+python scripts/batch_train.py --datasets Halfmile --datasets Brunswick
 
-# Resume from checkpoint
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --resume models/registry/MPSLightUNet_Halfmile_epoch_10.pt
+# Train with custom settings
+python scripts/batch_train.py --epochs 50 --device cpu --log-memory --verbose
+
+# Use custom config
+python scripts/batch_train.py --config configs/my_config.yaml
 ```
 
-### `scripts/evaluate.py`
+---
 
-**Evaluation entry point.**
+### 2. `scripts/train.py`
+
+**Purpose:** Train a single model on a single dataset.
+
+**Usage:**
+```bash
+python scripts/train.py --config configs/halfmile.yaml [OPTIONS]
+```
+
+**Options:**
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--config` | `-c` | String | **Required** | Path to config YAML |
-| `--model` | `-m` | String | **Required** | Model path or `best` |
+| `--config` | `-c` | Required | - | Config file path |
+| `--resume` | `-r` | String | None | Resume from checkpoint |
+| `--device` | `-d` | String | None | Override device |
+| `--epochs` | `-e` | Integer | None | Override epochs |
+| `--model` | `-m` | String | `unet` | Model architecture |
+| `--dataset` | `-ds` | String | None | Override dataset name |
+| `--preprocess` | `-p` | Flag | False | Force preprocessing |
+| `--class-weights` | `-cw` | 3 Floats | None | Class weights |
+| `--verbose` | `-v` | Flag | False | Enable verbose logging |
+| `--log-memory` | `-lm` | Flag | False | Enable memory logging |
+| `--log-level` | `-ll` | String | None | Override log level |
+| `--search-best` | - | Flag | False | Search for best model |
+| `--checkpoint-every` | `-ce` | Integer | 5 | Save checkpoint every N epochs |
+| `--early-stopping` | `-es` | Integer | 5 | Early stopping patience |
+| `--batch-size` | `-b` | Integer | None | Override batch size |
+| `--cache-size` | - | Integer | None | Override cache size |
+| `--learning-rate` | `-lr` | Float | None | Override learning rate |
+| `--num-workers` | `-w` | Integer | None | Override workers |
+
+**Examples:**
+```bash
+# Basic training
+python scripts/train.py --config configs/halfmile.yaml
+
+# Train with specific model and parameters
+python scripts/train.py --config configs/halfmile.yaml --model mpslight --epochs 50
+
+# Train with memory logging and verbose output
+python scripts/train.py --config configs/halfmile.yaml --log-memory --verbose
+
+# Resume training from checkpoint
+python scripts/train.py --config configs/halfmile.yaml --resume checkpoints/epoch_10.pt
+```
+
+---
+
+### 3. `scripts/evaluate.py`
+
+**Purpose:** Evaluate trained models on test/validation sets.
+
+**Usage:**
+```bash
+python scripts/evaluate.py --config configs/halfmile.yaml --model best [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--config` | `-c` | Required | - | Config file path |
+| `--model` | `-m` | Required | - | Model path or "best" |
 | `--output` | `-o` | String | `evaluation_results` | Output directory |
-| `--device` | `-d` | String | `mps` | `cpu`, `cuda`, `mps` |
-| `--batch_size` | `-b` | Integer | `4` | Batch size |
-| `--dataset` | `-ds` | String | From config | Override dataset name |
+| `--device` | `-d` | String | `mps` | Device to use |
+| `--batch_size` | `-b` | Integer | 4 | Batch size |
+| `--dataset` | `-ds` | String | None | Override dataset name |
+| `--split` | `-s` | String | `test` | Split to evaluate |
+| `--detailed` | - | Flag | False | Generate per-shot metrics |
 
 **Examples:**
 ```bash
 # Evaluate champion model
 python scripts/evaluate.py --config configs/halfmile.yaml --model best
 
-# Evaluate specific checkpoint
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt
+# Evaluate specific model on test set
+python scripts/evaluate.py --config configs/halfmile.yaml --model models/registry/model.pt
+
+# Generate detailed metrics
+python scripts/evaluate.py --config configs/halfmile.yaml --model best --detailed
+
+# Evaluate all splits
+python scripts/evaluate.py --config configs/halfmile.yaml --model best --split all
 ```
 
-### `scripts/visualize.py`
+---
 
-**Visualization entry point.**
+### 4. `scripts/preprocess.py`
+
+**Purpose:** Preprocess raw HDF5 data into chunked format.
+
+**Usage:**
+```bash
+python scripts/preprocess.py --config configs/halfmile.yaml [OPTIONS]
+```
+
+**Options:**
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--config` | `-c` | String | **Required** | Path to config YAML |
-| `--model` | `-m` | String | **Required** | Model path |
+| `--config` | `-c` | Required | - | Config file path |
+| `--force` | `-f` | Flag | False | Force reprocessing |
+| `--dataset` | `-d` | String | None | Override dataset name |
+
+**Examples:**
+```bash
+# Preprocess dataset
+python scripts/preprocess.py --config configs/halfmile.yaml
+
+# Force reprocess even if chunks exist
+python scripts/preprocess.py --config configs/halfmile.yaml --force
+```
+
+---
+
+### 5. `scripts/visualize.py`
+
+**Purpose:** Visualize model predictions on test samples.
+
+**Usage:**
+```bash
+python scripts/visualize.py --config configs/halfmile.yaml --model models/registry/model.pt
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--config` | `-c` | Required | - | Config file path |
+| `--model` | `-m` | Required | - | Model checkpoint path |
 | `--output` | `-o` | String | `visualization_results` | Output directory |
-| `--n_samples` | `-n` | Integer | `10` | Number of samples |
-| `--device` | `-d` | String | `mps` | `cpu`, `cuda`, `mps` |
-| `--style` | `-s` | Choice | `wiggle` | `wiggle`, `mask` |
-| `--dataset` | `-ds` | String | From config | Override dataset name |
+| `--n_samples` | `-n` | Integer | 10 | Number of samples |
+| `--device` | `-d` | String | `mps` | Device to use |
 
-### `scripts/search_models.py`
+**Examples:**
+```bash
+# Visualize 20 samples
+python scripts/visualize.py --config configs/halfmile.yaml --model best --n_samples 20
+```
 
-**Search and compare models.**
+---
+
+### 6. `scripts/search_models.py`
+
+**Purpose:** Search and compare models in MLflow registry.
+
+**Usage:**
+```bash
+python scripts/search_models.py [OPTIONS]
+```
+
+**Options:**
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--dataset` | `-d` | String | None | Filter by dataset |
 | `--model-type` | `-m` | String | None | Filter by model type |
 | `--min-iou` | - | Float | None | Minimum IoU threshold |
-| `--top` | `-n` | Integer | `10` | Number of results |
+| `--top` | `-n` | Integer | 10 | Number of results |
 | `--compare` | `-c` | Flag | False | Compare models side by side |
 
-### `scripts/export_model.py`
+**Examples:**
+```bash
+# Search all models
+python scripts/search_models.py
 
-**Export model to ONNX/TorchScript.**
+# Search Halfmile models with IoU > 0.6
+python scripts/search_models.py --dataset Halfmile --min-iou 0.6
 
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--model` | `-m` | String | **Required** | Model path |
-| `--model-type` | `-t` | Choice | `unet` | `unet`, `mpslight` |
-| `--output` | `-o` | String | `exported_models` | Output directory |
-| `--device` | `-d` | String | `cpu` | `cpu`, `cuda`, `mps` |
-| `--onnx` | - | Flag | False | Export to ONNX |
-| `--torchscript` | - | Flag | False | Export to TorchScript |
-
-### `scripts/preprocess.py`
-
-**Preprocess HDF5 to chunks.**
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--config` | `-c` | String | **Required** | Path to config YAML |
-| `--force` | `-f` | Flag | False | Force reprocessing |
-| `--dataset` | `-d` | String | From config | Override dataset name |
-
----
-
-## Configuration
-
-### `configs/halfmile.yaml` (Example)
-
-```yaml
-# ============================================================
-# HALFMILE DATASET CONFIGURATION
-# ============================================================
-
-# === Dataset ===
-dataset_name: "Halfmile"
-hdf5_path: "data/raw/Halfmile3D_add_geom_sorted.hdf5"
-chunk_dir: "data/chunks"
-preprocess: false
-force_reprocess: false
-
-# === Data ===
-target_traces: 1578
-n_samples: 751
-strip_width: 8
-chunk_size: 69
-random_seed: 42
-train_split: 0.8
-val_split: 0.1
-test_split: 0.1
-
-# === Training ===
-batch_size: 4
-learning_rate: 0.001
-n_epochs: 30
-device: "mps"
-num_workers: 2
-multi_gpu: false
-gpu_ids: null
-
-# === Loss ===
-class_weights: [0.1, 0.1, 0.8]
-
-# === Model Registry ===
-model_registry_dir: "models/registry"
-checkpoint_dir: "models/registry"
-checkpoint_every: 5
-
-# === Cache ===
-cache_size: 5
-
-# === Scheduler ===
-lr_scheduler: "plateau"
-lr_patience: 3
-lr_factor: 0.5
-lr_step_size: 10
-lr_gamma: 0.5
-lr_T_max: 30
-
-# === Regularization ===
-gradient_clip_value: 1.0
-
-# === Early Stopping ===
-early_stopping_patience: 5
-early_stopping_min_delta: 0.0001
-
-# === Logging ===
-tensorboard_log_dir: "runs"
-mlflow_experiment_name: "seismic-fbp"
-log_dir: "logs"
-log_level: "INFO"
-
-# === Debugging ===
-verbose_training: false
-log_batch_every: null
-log_memory: false
-log_predictions_every: 5
+# Compare top 2 models
+python scripts/search_models.py --compare --top 2
 ```
 
-### Dataset-Specific Parameters
+---
 
-| Dataset | target_traces | n_samples | Chunks | Notes |
-|---------|---------------|-----------|--------|-------|
-| Halfmile | 1578 | 751 | 10 | ✅ Tested |
-| Brunswick | 2582 | 751 | 24 | ✅ Tested |
-| Lalor | 2685 | 1501 | 12 | Larger chunks |
-| Sudbury | 1138 | 1001 | 13 | Sparse labels |
+### 7. `scripts/export_model.py`
+
+**Purpose:** Export trained models to ONNX and TorchScript formats.
+
+**Usage:**
+```bash
+python scripts/export_model.py --model model.pt --onnx --torchscript
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--model` | `-m` | Required | - | Model checkpoint path |
+| `--output` | `-o` | String | `exported_models` | Output directory |
+| `--onnx` | - | Flag | False | Export to ONNX |
+| `--torchscript` | - | Flag | False | Export to TorchScript |
+| `--device` | `-d` | String | `cpu` | Device for export |
+| `--model-type` | `-t` | String | `unet` | Model architecture |
+| `--config` | `-c` | String | None | Config file path |
+
+**Examples:**
+```bash
+# Export to ONNX only
+python scripts/export_model.py --model model.pt --onnx
+
+# Export to both formats
+python scripts/export_model.py --model model.pt --onnx --torchscript
+```
 
 ---
 
-## Monitoring
+## Model Architectures
 
-### TensorBoard
+| Model | Parameters | Memory | Speed | Description |
+|-------|-----------|--------|-------|-------------|
+| **PicoUNet** | ~2K | < 10MB | Fastest | Minimal U-Net, testing only |
+| **NanoUNet** | ~10K | ~50MB | Very Fast | Ultra-lightweight testing |
+| **TinyUNet** | ~50K | ~100MB | Fast | Lightweight testing |
+| **MPSLightUNet** | ~1.7M | ~150MB | Fast | MPS-optimized, recommended |
+| **LightUNet** | ~2.5M | ~200MB | Fast | Lightweight production |
+| **MobileUNet** | ~3.5M | ~250MB | Fast | MobileNet + U-Net |
+| **EfficientUNet** | ~5M | ~300MB | Medium | EfficientNet + U-Net |
+| **UNet** | ~31M | ~500MB | Slow | Full U-Net, best accuracy |
+
+---
+
+## Datasets Information
+
+| Dataset | Traces | Samples | File Size | Description |
+|---------|--------|---------|-----------|-------------|
+| **Brunswick** | 2582 | 751 | ~1.5GB | 3D seismic survey |
+| **Halfmile** | 1578 | 751 | ~1.2GB | 3D seismic survey |
+| **Lalor** | 2685 | 1501 | ~3.3GB | 3D seismic survey, larger |
+| **Sudbury** | 1138 | 1001 | ~1.0GB | 3D seismic survey |
+
+---
+
+## MLflow Integration
+
+The project uses MLflow for experiment tracking, model registry, and versioning.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Experiment Tracking** | All parameters, metrics, and artifacts logged |
+| **Model Registry** | Versioned models with aliases |
+| **Alias System** | Champion (production), Challenger, Staging |
+| **Automatic Promotion** | Best model automatically becomes champion |
+| **Run Comparison** | Compare models side by side |
+| **System Metrics** | GPU/CPU usage monitoring |
+
+### Model Registry Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MODEL LIFECYCLE                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Training Run                                              │
+│       │                                                     │
+│       ▼                                                     │
+│  Model Version 1 (Candidate)                               │
+│       │                                                     │
+│       ▼                                                     │
+│  Alias: staging  ←─ Latest model                           │
+│       │                                                     │
+│       ▼                                                     │
+│  Is it better than champion?                               │
+│       │                                                     │
+│       ├── Yes ──► Alias: champion (new)                   │
+│       │         Alias: challenger (old champion)          │
+│       │                                                     │
+│       └── No ───► Alias: challenger (this model)          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### MLflow Commands
 
 ```bash
-# View specific dataset/model
-tensorboard --logdir runs/Halfmile/MPSLightUNet
+# Start MLflow UI
+mlflow ui --backend-store-uri sqlite:///mlflow.db
 
-# View all
+# List registered models
+mlflow models list
+
+# Set model alias
+mlflow models set-alias --name halfmile --alias champion --version 2
+
+# Get model by alias
+mlflow models get-alias --name halfmile --alias champion
+
+# Load model from registry
+python -c "
+import mlflow
+model = mlflow.pytorch.load_model('models:/halfmile@champion')
+"
+```
+
+---
+
+## Logging System
+
+### Loguru Integration
+
+The project uses Loguru for structured logging with:
+
+| Feature | Description |
+|---------|-------------|
+| **Date-based directories** | `logs/YYYY-MM-DD/` |
+| **Multiple log levels** | DEBUG, INFO, WARNING, ERROR, CRITICAL |
+| **Separate log files** | Main, Errors, Debug, JSON |
+| **Log rotation** | 10MB per file, 7-day retention |
+| **Compression** | .gz compression for old logs |
+| **Symlink** | `logs/latest/latest.log` for quick access |
+
+### Log Files
+
+```
+logs/
+├── YYYY-MM-DD/
+│   ├── HH-MM-SS_task_name.log           # Main log
+│   ├── HH-MM-SS_task_name_errors.log    # Errors only
+│   ├── HH-MM-SS_task_name_debug.log     # Debug only
+│   └── HH-MM-SS_task_name.json          # Structured JSON logs
+└── latest/
+    └── latest.log                       # Symlink to latest log
+```
+
+---
+
+## Memory Management
+
+### LRU Cache System
+
+The chunked dataset uses an LRU cache to manage memory:
+
+```python
+cache = LRUCache(max_size=3)  # Keep 3 chunks in memory
+
+# Cache operations
+cache.get(chunk_id)  # Retrieve chunk
+cache.put(chunk_id, data)  # Store chunk
+cache.clear()  # Clear all cached chunks
+```
+
+### Memory Monitoring
+
+```python
+from src.utils.memory_utils import check_memory_usage, clear_memory
+
+# Check memory
+usage = check_memory_usage()
+print(f"Memory: {usage['used_gb']:.1f}GB / {usage['total_gb']:.1f}GB")
+
+# Clear memory between datasets
+clear_memory()
+```
+
+---
+
+## Quick Reference
+
+### Common Commands
+
+```bash
+# 1. Preprocess a dataset
+python scripts/preprocess.py --config configs/halfmile.yaml
+
+# 2. Train a single model
+python scripts/train.py --config configs/halfmile.yaml --model mpslight --epochs 30
+
+# 3. Batch train all datasets
+python scripts/batch_train.py
+
+# 4. Evaluate the champion model
+python scripts/evaluate.py --config configs/halfmile.yaml --model best
+
+# 5. Visualize predictions
+python scripts/visualize.py --config configs/halfmile.yaml --model best --n_samples 10
+
+# 6. Search MLflow models
+python scripts/search_models.py --dataset Halfmile
+
+# 7. Start MLflow UI
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+
+# 8. Start TensorBoard
 tensorboard --logdir runs/
 ```
 
-**What you see:**
-- Loss curves (train/val)
-- IoU, F1, Accuracy curves
-- Learning rate
-- Memory usage
-- Class-wise IoU
-- Weight/gradient histograms
-
-### MLflow UI
+### Development Workflow
 
 ```bash
-mlflow ui --backend-store-uri sqlite:///mlflow.db
-```
+# 1. Test on a small dataset
+python scripts/batch_train.py --datasets Halfmile --epochs 5 --verbose
 
-**What you see:**
-- **Experiments**: All runs
-- **Model Registry**: Registered models with versions
-- **Model Aliases**: champion, challenger, staging
-- **System Metrics**: GPU/CPU utilization (if on CUDA)
-- **Artifacts**: Models, checkpoints, predictions
+# 2. Full training
+python scripts/batch_train.py --epochs 30
 
-### Logs
+# 3. Evaluate results
+python scripts/evaluate.py --config configs/halfmile.yaml --model best --detailed
 
-```bash
-# Latest logs
-tail -f logs/latest/latest.log
+# 4. Export best model
+python scripts/export_model.py --model models/registry/best_model.pt --onnx --torchscript
 
-# Dataset-specific logs
-tail -f logs/2026-08-31/10-30-45_training_Halfmile_mpslight.log
-
-# Debug logs
-tail -f logs/2026-08-31/10-30-45_training_Halfmile_mpslight_debug.log
+# 5. Visualize results
+python scripts/visualize.py --config configs/halfmile.yaml --model best --n_samples 20
 ```
 
 ---
 
 ## Troubleshooting
 
-### Common Errors
+### Common Issues and Solutions
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `MLflow autologging failed` | PyTorch version | Update PyTorch: `pip install --upgrade torch` |
-| `System metrics logging failed` | Not on CUDA | Ignore on MPS/CPU |
-| `Model registry not found` | No models registered | Train at least 1 epoch |
-| `--model best not found` | No champion alias | Train at least 1 epoch |
-| `MPS out of memory` | Batch size too large | Reduce `batch_size` in config |
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `No such option '--checkpoint-every'` | Missing option in train.py | Update train.py with missing options |
+| Memory Error | Insufficient RAM | Reduce batch size or use smaller model |
+| MPS Out of Memory | MPS memory limit | Set `PYTORCH_MPS_MEMORY_LIMIT` |
+| HDF5 validation failed | Corrupt/missing file | Re-download dataset |
+| MLflow model not found | Model not registered | Train with MLflow enabled |
+| CUDA not available | No GPU or wrong CUDA version | Use `--device cpu` or `--device mps` |
 
-### Common Commands
+### Debug Commands
 
 ```bash
-# Check MLflow database
-sqlite3 mlflow.db "SELECT COUNT(*) FROM experiments;"
-sqlite3 mlflow.db "SELECT COUNT(*) FROM runs;"
+# Check memory usage
+python -c "import psutil; print(f'Memory: {psutil.virtual_memory().percent}%')"
 
-# Check registered models
-sqlite3 mlflow.db "SELECT * FROM registered_models;"
+# Check MLflow runs
+python scripts/search_models.py
 
-# Check model aliases
-sqlite3 mlflow.db "SELECT * FROM model_alias;"
+# Check GPU availability
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, MPS: {torch.backends.mps.is_available()}')"
 
-# Delete MLflow data (start fresh)
-rm -f mlflow.db
-rm -rf mlruns/
+# Clear MPS cache
+python -c "import torch; torch.mps.empty_cache()"
 ```
 
-### Environment Variables
+---
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `MLFLOW_ALLOW_FILE_STORE` | Allow file store | `true` |
-| `MLFLOW_TRACKING_URI` | Tracking server URI | `sqlite:///mlflow.db` |
-| `MLFLOW_S3_ENDPOINT_URL` | S3 endpoint | None |
-| `AWS_ACCESS_KEY_ID` | S3 access key | None |
-| `AWS_SECRET_ACCESS_KEY` | S3 secret key | None |
+## Environment Setup
+
+```bash
+# Create virtual environment
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set environment variables
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+export PYTORCH_MPS_MEMORY_LIMIT=8000000000
+
+# Optional: MLflow credentials
+export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
+```
 
 ---
 
-## Next Steps
-
-1. **Test MLflow Features:**
-   ```bash
-   python scripts/train.py --config configs/halfmile.yaml --epochs 1 --search-best
-   ```
-
-2. **Check MLflow UI:**
-   ```bash
-   mlflow ui --backend-store-uri sqlite:///mlflow.db
-   ```
-
-3. **Evaluate Champion Model:**
-   ```bash
-   python scripts/evaluate.py --config configs/halfmile.yaml --model best
-   ```
-
-4. **Train All Datasets:**
-   ```bash
-   for dataset in halfmile brunswick lalor sudbury; do
-       python scripts/train.py --config configs/$dataset.yaml --epochs 30
-   done
-   ```
-
----
-
-## Support
-
-For issues, check:
-1. **Logs:** `logs/latest/latest.log`
-2. **TensorBoard:** `runs/{dataset}/{model}/`
-3. **MLflow:** `mlflow ui`
-4. **GitHub Issues:** [Repository URL]
-
----
-
-**Happy training!** 🚀
+This documentation covers the complete project structure, all scripts, configuration files, and usage examples for the First Break Picking pipeline.

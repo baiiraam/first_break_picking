@@ -3,22 +3,24 @@
 Search and compare MLflow models.
 """
 
-import sys
 import os
+import sys
+
 import click
-from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.utils.mlflow_utils import get_mlflow_manager
 from src.utils.logger import setup_logger
+from src.utils.mlflow_utils import get_mlflow_manager
 
 logger = setup_logger(task_name="search_models")
 
 
 @click.command()
 @click.option("--dataset", "-d", help="Filter by dataset name")
-@click.option("--model-type", "-m", help="Filter by model type (UNet, MPSLightUNet, etc.)")
+@click.option(
+    "--model-type", "-m", help="Filter by model type (UNet, MPSLightUNet, etc.)"
+)
 @click.option("--min-iou", type=float, help="Minimum IoU threshold")
 @click.option("--top", "-n", default=10, help="Number of results to show")
 @click.option("--compare", "-c", is_flag=True, help="Compare models side by side")
@@ -57,7 +59,9 @@ def main(dataset, model_type, min_iou, top, compare):
 
     # Display results
     logger.info("\n" + "-" * 80)
-    logger.info(f"{'#':<4} {'Model':<30} {'Dataset':<12} {'IoU':<8} {'F1':<8} {'Class2 IoU':<10}")
+    logger.info(
+        f"{'#':<4} {'Model':<30} {'Dataset':<12} {'IoU':<8} {'F1':<8} {'Class2 IoU':<10}"
+    )
     logger.info("-" * 80)
 
     for i, model in enumerate(models[:top]):
@@ -70,7 +74,9 @@ def main(dataset, model_type, min_iou, top, compare):
         f1 = metrics.get("val_f1", 0)
         class2_iou = metrics.get("class_2_iou", 0)
 
-        logger.info(f"{i+1:<4} {name:<30} {dataset_name:<12} {iou:.4f}  {f1:.4f}  {class2_iou:.4f}")
+        logger.info(
+            f"{i + 1:<4} {name:<30} {dataset_name:<12} {iou:.4f}  {f1:.4f}  {class2_iou:.4f}"
+        )
 
     logger.info("-" * 80)
 
@@ -83,7 +89,7 @@ def main(dataset, model_type, min_iou, top, compare):
             metrics = {m.key: m.value for m in model.metrics}
             tags = {t.key: t.value for t in model.tags}
 
-            logger.info(f"\nModel {i+1}: {model.name}")
+            logger.info(f"\nModel {i + 1}: {model.name}")
             logger.info(f"  Dataset: {tags.get('dataset', 'Unknown')}")
             logger.info(f"  Type: {tags.get('model_type', 'Unknown')}")
             logger.info(f"  IoU: {metrics.get('val_iou', 0):.4f}")

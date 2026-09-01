@@ -1,0 +1,84 @@
+# configs/sweep_config.yaml
+
+# ============================================================
+# MLflow Sweep Configuration
+# ============================================================
+
+global:
+  epochs: 2
+  device: "mps"
+  log_memory: true
+  verbose: true
+  log_level: "INFO"
+  skip_failed: true
+  clear_memory_between_datasets: true
+  pause_between_datasets: 2
+
+# ============================================================
+# SWEEP GRID
+# ============================================================
+sweep:
+  # All datasets
+  datasets:
+    - "Brunswick"
+    - "Halfmile"
+    - "Lalor"
+    - "Sudbury"
+  
+  # All models
+  models:
+    - "pico"
+    - "nano"
+    - "tiny"
+    - "mpslight"
+    - "light"
+    - "mobile"
+    - "efficient"
+    - "unet"
+  
+  # All loss functions
+  losses:
+    - "cross_entropy"
+    - "focal"
+    - "dice"
+    - "combo"
+  
+  # Loss-specific parameters
+  loss_params:
+    cross_entropy:
+      class_weights: [0.1, 0.1, 0.8]
+    focal:
+      class_weights: [0.1, 0.1, 0.8]
+      focal_gamma: 2.0
+    dice:
+      class_weights: [0.1, 0.1, 0.8]
+    combo:
+      class_weights: [0.1, 0.1, 0.8]
+      dice_weight: 0.5
+      focal_gamma: 2.0
+
+# ============================================================
+# MLflow Tracking
+# ============================================================
+tracking:
+  enabled: true
+  experiment_name: "model_loss_sweep"
+  tags:
+    project: "seismic_fbp"
+    sweep_type: "grid_search"
+  
+  # Auto-logging settings
+  autolog:
+    enabled: true
+    log_models: true
+    log_every_n_epoch: 1
+    log_every_n_step: 10
+
+# ============================================================
+# Dataset-Specific Overrides
+# ============================================================
+datasets:
+  Lalor:
+    batch_size_override: 2
+    model_override: "tiny"
+    preprocess: true

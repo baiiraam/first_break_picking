@@ -1,7 +1,7 @@
-import torch
-import torch.nn as nn
 import time
-import sys
+
+import torch
+from torch import nn
 
 print("=" * 60)
 print("MPS CROSSENTROPY LOSS TEST")

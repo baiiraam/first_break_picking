@@ -1,0 +1,8 @@
+# ruff.toml
+
+exclude = [
+    "*.ipynb",
+    ".venv",
+    "__pycache__",
+]
+
