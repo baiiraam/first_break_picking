@@ -297,7 +297,7 @@ def main(
                         cfg.n_samples,
                     )
 
-                    processed_data, processed_mask = processor.process_shot(
+                    processed_data, processed_mask, _ = processor.process_shot(
                         shot_data, shot_picks
                     )
                     data_batch[i] = torch.tensor(processed_data, dtype=torch.float32)
