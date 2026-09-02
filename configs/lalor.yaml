@@ -31,7 +31,7 @@ class_weights: [0.1, 0.1, 0.8]
 # === Model Registry ===
 model_registry_dir: "models/registry"
 checkpoint_dir: "models/registry"
-checkpoint_every: 5
+checkpoint_every: 1
 
 # === Cache ===
 cache_size: 3                    # ⚠️ Reduce from 5 (Lalor chunks are ~3.3 GB)
