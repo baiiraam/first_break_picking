@@ -4,13 +4,12 @@ Run PicoUNet on all datasets with logging.
 """
 
 import subprocess
-import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Define datasets
 DATASETS = ["Halfmile", "Sudbury", "Brunswick", "Lalor"]
-TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 # Create logs directory
 Path("logs/pico_runs").mkdir(parents=True, exist_ok=True)
@@ -63,5 +62,5 @@ for dataset in DATASETS:
 
 print("\n" + "=" * 40)
 print("✅ All datasets processed!")
-print(f"📁 Logs saved in: logs/pico_runs/")
+print("📁 Logs saved in: logs/pico_runs/")
 print("=" * 40)
