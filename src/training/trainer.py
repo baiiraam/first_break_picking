@@ -375,38 +375,24 @@ class SeismicTrainer:
         logger.info("✅ MPS warmup complete!")
 
     def _log_model_checkpoint(
-        self,
-        epoch: int,
-        train_loss: float,
-        val_loss: float,
-        val_metrics: dict | None = None,
-    ):
-        """
-        Log a model checkpoint with MLflow registry support.
-        """
+    self,
+    epoch: int,
+    train_loss: float,
+    val_loss: float,
+    val_metrics: dict | None = None,
+):
+        """Log a model checkpoint with MLflow registry support."""
         if (epoch + 1) % self.config.checkpoint_every != 0:
             return
 
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_type = self.model_name
         dataset_name = self.config.dataset_name
 
-        # ============================================================
-        # 🔥 ADD DEBUG LOGGING HERE
-        # ============================================================
-        logger.info(
-            f"📦 _log_model_checkpoint: checkpoint triggered at epoch {epoch + 1}"
-        )
+        logger.info(f"📦 _log_model_checkpoint: checkpoint triggered at epoch {epoch + 1}")
         logger.info(f"   checkpoint_every: {self.config.checkpoint_every}")
 
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_type = self.model_name
-        dataset_name = self.config.dataset_name
-
         # Prepare model for logging
-        model_to_save = (
-            self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-        )
+        model_to_save = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
         model_to_save.eval()
 
         # Create input example for signature
@@ -415,20 +401,20 @@ class SeismicTrainer:
         # Build registered model name
         registered_name = format_registered_model_name(dataset_name)
 
-        # ============================================================
-        # 🔥 LOG WHAT WE'RE ABOUT TO DO
-        # ============================================================
         logger.info(f"   Registered model name: {registered_name}")
         logger.info(f"   Model type: {model_type}")
         logger.info(f"   Dataset: {dataset_name}")
+
+        # ============================================================
+        # FIX: Initialize model_info as None
+        # ============================================================
+        model_info = None
 
         # Log model with MLflow registry
         try:
             model_info = self.mlflow_manager.log_model_with_registry(
                 model=model_to_save,
-                model_name=format_model_name(
-                    model_type, dataset_name, f"epoch_{epoch + 1}"
-                ),
+                model_name=format_model_name(model_type, dataset_name, f"epoch_{epoch + 1}"),
                 dataset_name=dataset_name,
                 step=epoch + 1,
                 registered_model_name=registered_name,
@@ -440,43 +426,43 @@ class SeismicTrainer:
                     "model_type": model_type,
                 },
             )
-            logger.info(
-                f"✅ Model checkpoint logged to MLflow: {model_info.get('model_uri')}"
-            )
+            logger.info(f"✅ Model checkpoint logged to MLflow: {model_info.get('model_uri')}")
         except Exception as e: # noqa: BLE001
             logger.error(f"❌ Failed to log model checkpoint: {e}")
             import traceback
-
             traceback.print_exc()
 
-        # Log metrics linked to this checkpoint
-        metrics = {
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-            "lr": self.optimizer.param_groups[0]["lr"],
-        }
+        # ============================================================
+        # FIX: Only log metrics if model_info exists
+        # ============================================================
+        if model_info is not None:
+            metrics = {
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "lr": self.optimizer.param_groups[0]["lr"],
+            }
 
-        if val_metrics:
-            metrics.update(
-                {
+            if val_metrics:
+                metrics.update({
                     "val_iou": val_metrics.get("mean_iou", 0),
                     "val_f1": val_metrics.get("mean_f1", 0),
                     "val_accuracy": val_metrics.get("accuracy", 0),
+                })
+                for i, iou in enumerate(val_metrics.get("iou_per_class", [])):
+                    metrics[f"class_{i}_iou"] = iou
+
+            mlflow.log_metrics(metrics, step=epoch + 1, model_id=model_info.get("model_id"))
+
+            # Track registered models for alias management
+            if "registered_model_version" in model_info:
+                self.registered_models[registered_name] = {
+                    "version": model_info["registered_model_version"],
+                    "val_loss": val_loss,
                 }
-            )
-            for i, iou in enumerate(val_metrics.get("iou_per_class", [])):
-                metrics[f"class_{i}_iou"] = iou
 
-        mlflow.log_metrics(metrics, step=epoch + 1, model_id=model_info.get("model_id"))
-
-        # Track registered models for alias management
-        if "registered_model_version" in model_info:
-            self.registered_models[registered_name] = {
-                "version": model_info["registered_model_version"],
-                "val_loss": val_loss,
-            }
-
-        logger.info(f"Model checkpoint logged to MLflow: {model_info.get('model_uri')}")
+            logger.info(f"Model checkpoint logged to MLflow: {model_info.get('model_uri')}")
+        else:
+            logger.warning("⚠️ MLflow model logging failed, skipping MLflow metrics")
 
         # Also save to local registry (existing behavior)
         self._save_checkpoint(epoch + 1, train_loss, val_loss)
@@ -958,3 +944,4 @@ class SeismicTrainer:
             best_path,
         )
         self.mlflow_manager.log_artifact(str(best_path), artifact_path="checkpoints")
+        

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.mps_light_unet import MPSLightUNet
+from src.models.factory import create_model
 from src.preprocessing.manifest import load_manifest
 from src.utils.logger import create_task_name, setup_logger
 
@@ -73,7 +73,10 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
 
     # Load model
     device_obj = torch.device(cfg.device)
-    model_obj = MPSLightUNet(in_channels=1, out_channels=3)
+
+    # Determine model type from checkpoint or config
+    model_type = getattr(cfg, 'model_name', 'mpslight')
+    model_obj = create_model(model_type, in_channels=1, out_channels=3)
 
     checkpoint = torch.load(model, map_location=device_obj)
     if "model_state_dict" in checkpoint:

@@ -275,7 +275,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.mps_light_unet import MPSLightUNet
+from src.models.factory import create_model
 from src.preprocessing.manifest import load_manifest
 from src.training.metrics import (
     FirstBreakMetrics,
@@ -426,7 +426,17 @@ def main(
             # Regular file path
             try:
                 logger.info(f"Loading model from file: {model}")
-                model_obj = MPSLightUNet(in_channels=1, out_channels=3)
+                # Determine model type from checkpoint or config
+                # If you have model_type stored in config, use it
+                # Otherwise, default to mpslight
+                if hasattr(cfg, 'model_name'):
+                    model_type = cfg.model_name
+                else:
+                    # Try to infer from file name
+                    model_type = "mpslight"  # Default
+                    
+                model_obj = create_model(model_type, in_channels=1, out_channels=3)
+
                 checkpoint = torch.load(model, map_location=device_obj)
                 if "model_state_dict" in checkpoint:
                     model_obj.load_state_dict(checkpoint["model_state_dict"])

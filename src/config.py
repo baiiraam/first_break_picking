@@ -79,11 +79,6 @@ class SeismicConfig:
     log_metrics_every: int = 1
     log_gradients: bool = False
 
-    # Loss
-    loss_function: str = "cross_entropy"  # cross_entropy, focal, dice, combo
-    dice_weight: float = 0.5
-    focal_gamma: float = 2.0
-
     # === Debugging ===
     verbose_training: bool = False
     log_batch_every: int | None = None  # None = disabled
