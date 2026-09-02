@@ -28,7 +28,7 @@ MODEL_PAIRS = [
     ["efficient", "unet"],      # Pair 4: ~5M + ~31M params
 ]
 
-DATASETS = ["Brunswick", "Halfmile", "Lalor", "Sudbury"]
+DATASETS = ["Halfmile", "Sudbury", "Brunswick", "Lalor"]
 
 # Models to skip per dataset (if they don't fit)
 SKIP_PER_DATASET = {
