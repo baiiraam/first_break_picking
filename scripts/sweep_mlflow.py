@@ -4,18 +4,16 @@ MLflow Sweep Script
 Runs grid search over datasets, models, and loss functions with MLflow tracking.
 """
 
-import os
-import sys
-import subprocess
 import json
+import os
+import subprocess
+import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Optional
+
 import click
 import yaml
-import mlflow
-import mlflow.pytorch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -88,7 +86,7 @@ class SweepExperiment:
                         "model": model,
                         "loss": loss,
                         "experiment_type": "sweep",
-                        "sweep_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                        "sweep_id": datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
                         **self.tracking_config.get("tags", {}),
                     },
                 )
@@ -99,7 +97,7 @@ class SweepExperiment:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=self.global_config.get("timeout_seconds", 3600),
+                check=False
             )
             
             duration = time.time() - start_time
@@ -154,7 +152,7 @@ class SweepExperiment:
                 "error": "Timeout",
                 "metrics": {},
             }
-        except Exception as e:
+        except Exception as e: # noqa BLE001
             logger.error(f"   ❌ ERROR: {e}")
             return {
                 "success": False,
@@ -203,7 +201,9 @@ class SweepExperiment:
         
         return cmd
     
-    def parse_metrics(self, output: str) -> dict:
+    # In scripts/sweep_mlflow.py, replace the parse_metrics function:
+
+    def parse_metrics(output: str) -> dict:
         """Parse metrics from training output."""
         metrics = {}
         
@@ -211,33 +211,39 @@ class SweepExperiment:
             if "Train Loss:" in line:
                 try:
                     metrics["train_loss"] = float(line.split("Train Loss:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse train_loss from: {line[:50]}... Error: {e}")
+                    # Keep default value
+            
             if "Val Loss:" in line:
                 try:
                     metrics["val_loss"] = float(line.split("Val Loss:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse val_loss from: {line[:50]}... Error: {e}")
+            
             if "Train IoU:" in line:
                 try:
                     metrics["train_iou"] = float(line.split("Train IoU:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse train_iou from: {line[:50]}... Error: {e}")
+            
             if "Val IoU:" in line:
                 try:
                     metrics["val_iou"] = float(line.split("Val IoU:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse val_iou from: {line[:50]}... Error: {e}")
+            
             if "Train Acc:" in line:
                 try:
                     metrics["train_acc"] = float(line.split("Train Acc:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse train_acc from: {line[:50]}... Error: {e}")
+            
             if "Val Acc:" in line:
                 try:
                     metrics["val_acc"] = float(line.split("Val Acc:")[1].split()[0])
-                except:
-                    pass
+                except (IndexError, ValueError) as e:
+                    logger.debug(f"Could not parse val_acc from: {line[:50]}... Error: {e}")
         
         return metrics
     
@@ -299,7 +305,7 @@ class SweepExperiment:
     
     def save_checkpoint(self, results: list, failed: list):
         """Save checkpoint to resume later."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         checkpoint_file = Path("logs/sweep") / f"sweep_checkpoint_{timestamp}.json"
         checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
         
@@ -328,7 +334,7 @@ class SweepExperiment:
         if successful:
             # Best by val IoU
             best = max(successful, key=lambda x: x.get("metrics", {}).get("val_iou", 0))
-            logger.info(f"\n🏆 Best Experiment:")
+            logger.info("\n🏆 Best Experiment:")
             logger.info(f"  Dataset: {best['dataset']}")
             logger.info(f"  Model: {best['model']}")
             logger.info(f"  Loss: {best['loss']}")

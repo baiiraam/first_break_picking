@@ -228,11 +228,13 @@ class MLflowManager:
                 model_version_tags.update(tags)
 
             try:
-                self.client.set_model_version_tags(
-                    name=registered_model_name,
-                    version=version,
-                    tags=model_version_tags,
-                )
+                for key, value in model_version_tags.items():
+                    self.client.set_model_version_tag(
+                        name=registered_model_name,
+                        version=version,
+                        key=key,
+                        value=value
+                    )
                 logger.info(
                     f"Added tags to model version {version} of {registered_model_name}"
                 )

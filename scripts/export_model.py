@@ -15,8 +15,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
-from src.models.mps_light_unet import MPSLightUNet
-from src.models.unet import UNet
+from src.models.factory import create_model
 from src.utils.logger import create_task_name, setup_logger
 
 
@@ -77,13 +76,7 @@ def main(
 
     logger.info(f"\nInitializing {model_type} model...")
 
-    if model_type == "unet":
-        model_obj = UNet(in_channels=1, out_channels=3)
-    elif model_type == "mpslight":
-        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-    else:
-        logger.error(f"Unknown model type: {model_type}")
-        sys.exit(1)
+    model_obj = create_model(model_type, in_channels=1, out_channels=3)
 
     # Load checkpoint
     try:

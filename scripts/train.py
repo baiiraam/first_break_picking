@@ -16,14 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.efficient_unet import EfficientUNet
-from src.models.light_unet import LightUNet, NanoUNetLight
-from src.models.mobilenet import MobileUNet
-from src.models.mps_light_unet import MPSLightUNet
-from src.models.nano_unet import NanoUNet
-from src.models.pico_unet import PicoUNet
-from src.models.tiny_unet import TinyUNet
-from src.models.unet import UNet
+from src.models.factory import create_model
 from src.preprocessing.chunker import Chunker
 from src.preprocessing.manifest import (
     generate_manifest,
@@ -400,39 +393,31 @@ def main(
     # --- MODEL INITIALIZATION ---
     logger.info(f"\nInitializing model: {model}")
 
-    if model == "unet":
-        model_obj = UNet(in_channels=1, out_channels=3)
-        model_name = "UNet"
-    elif model == "efficient":
-        model_obj = EfficientUNet(in_channels=1, out_channels=3, pretrained=True)
-        model_name = "EfficientUNet"
-    elif model == "mobile":
-        model_obj = MobileUNet(in_channels=1, out_channels=3, pretrained=True)
-        model_name = "MobileUNet"
-    elif model == "light":
-        model_obj = LightUNet(in_channels=1, out_channels=3)
-        model_name = "LightUNet"
-    elif model == "nano-light":
-        model_obj = NanoUNetLight(in_channels=1, out_channels=3)
-        model_name = "NanoUNetLight"
-    elif model == "mpslight":
-        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-        model_name = "MPSLightUNet"
-    elif model == "tiny":
-        model_obj = TinyUNet(in_channels=1, out_channels=3)
-        model_name = "TinyUNet"
-    elif model == "nano":
-        model_obj = NanoUNet(in_channels=1, out_channels=3)
-        model_name = "NanoUNet"
-    elif model == "pico":
-        model_obj = PicoUNet(in_channels=1, out_channels=3)
-        model_name = "PicoUNet"
-    else:
-        raise ValueError(f"Unknown model: {model}")
+    # ============================================================
+    # MODEL INITIALIZATION
+    # ============================================================
+    logger.info(f"\nInitializing model: {model}")
+
+    # Map CLI model name to display name
+    model_display_names = {
+        "unet": "UNet",
+        "mpslight": "MPSLightUNet",
+        "light": "LightUNet",
+        "nano": "NanoUNet",
+        "tiny": "TinyUNet",
+        "pico": "PicoUNet",
+        "mobile": "MobileUNet",
+        "efficient": "EfficientUNet",
+    }
+    model_name = model_display_names.get(model, model.capitalize())
+
+    # Create model using factory
+    model_obj = create_model(model, in_channels=1, out_channels=3)
 
     total_params = sum(p.numel() for p in model_obj.parameters())
     logger.info(f"\nModel: {model_name}")
     logger.info(f"  Parameters: {total_params:,}")
+
 
     # Optimizer and loss (using configurable class weights)
     optimizer = torch.optim.Adam(model_obj.parameters(), lr=cfg.learning_rate)
