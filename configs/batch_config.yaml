@@ -3,7 +3,7 @@
 # ============================================================
 
 global:
-  epochs: 30
+  epochs: 100
   device: "mps"
   log_memory: true
   verbose: true
@@ -13,13 +13,13 @@ global:
   # LOSS FUNCTION CONFIGURATION
   # ============================================================
   loss_function: "combo"        # cross_entropy, focal, dice, combo
-  class_weights: [0.1, 0.1, 0.8]  # Before, After, Strip
+  class_weights: [0.05, 0.05, 0.9]  # Before, After, Strip
   dice_weight: 0.5              # For combo loss
   focal_gamma: 2.0              # For focal/combo loss
   
   preprocess: false
   checkpoint_every: 1
-  early_stopping: 5
+  early_stopping: 12
   skip_failed: true
   clear_memory_between_datasets: true
   pause_between_datasets: 2
@@ -52,7 +52,7 @@ auto:
   loss_overrides:
     Lalor:
       loss_function: "dice"      # Use Dice for large dataset
-      class_weights: [0.1, 0.1, 0.8]
+      class_weights: [0.05, 0.05, 0.9]
     
     Sudbury:
       loss_function: "focal"
