@@ -6,6 +6,7 @@ Supports:
 - Model registry with versioning and aliases
 - Checkpoint tracking with step parameter
 - Search and comparison of logged models
+- Run continuity for resuming training
 """
 
 import os
@@ -142,9 +143,50 @@ class MLflowManager:
 
         # Add timestamp tag
         mlflow.set_tag("start_time", datetime.now(timezone.utc).isoformat())
+        mlflow.set_tag("run_type", "new")
 
         logger.info(f"MLflow run started: {run_name} (ID: {self.run_id})")
         return self.run_id
+
+    def set_run(self, run_id: str):
+        """
+        Set the current run to an existing run ID for continuation.
+        
+        Args:
+            run_id: The MLflow run ID to continue
+        """
+        try:
+            # Get the run to verify it exists
+            run = self.client.get_run(run_id)
+            self.run_id = run_id
+            self.current_run = run
+            
+            # Set the active run context
+            mlflow.start_run(run_id=run_id, run_name=run.data.tags.get('mlflow.runName', 'continued_run'))
+            
+            # Update tags to indicate this is a resumed run
+            mlflow.set_tag("run_type", "resumed")
+            mlflow.set_tag("resume_time", datetime.now(timezone.utc).isoformat())
+            
+            # Get existing run name and update it
+            existing_name = run.data.tags.get('mlflow.runName', '')
+            if existing_name and not existing_name.endswith('(resumed)'):
+                mlflow.set_tag("mlflow.runName", f"{existing_name} (resumed)")
+            
+            logger.info(f"✅ Continued MLflow run: {run_id}")
+            logger.info(f"   Run name: {run.data.tags.get('mlflow.runName', 'unknown')}")
+            logger.info(f"   Existing tags: {run.data.tags}")
+            
+        except Exception as e:
+            logger.error(f"Failed to set MLflow run to {run_id}: {e}")
+            raise
+
+    def set_tag(self, key: str, value: str):
+        """Set a tag on the current run."""
+        if self.current_run:
+            mlflow.set_tag(key, value)
+        else:
+            logger.warning("No active run to set tag on")
 
     def log_metrics(self, metrics: dict[str, float], step: int):
         """Log metrics to MLflow."""
@@ -322,20 +364,6 @@ class MLflowManager:
 
         Returns:
             List of model objects or pandas DataFrame
-
-        Examples:
-            # Find best models for Halfmile dataset
-            best_models = mlflow_manager.search_models(
-                filter_string="params.dataset = 'Halfmile'",
-                order_by=[{"field_name": "metrics.val_iou", "ascending": False}],
-                max_results=5,
-            )
-
-            # Find models with high class 2 IoU
-            best_strip_models = mlflow_manager.search_models(
-                filter_string="metrics.class_2_iou > 0.2",
-                order_by=[{"field_name": "metrics.class_2_iou", "ascending": False}],
-            )
         """
         try:
             results = mlflow.search_logged_models(
@@ -351,15 +379,7 @@ class MLflowManager:
             return []
 
     def load_model_from_uri(self, model_uri: str):
-        """
-        Load a model from a URI.
-
-        Args:
-            model_uri: URI in format "models:/{model_id}" or "models:/{name}/{version}"
-
-        Returns:
-            Loaded model
-        """
+        """Load a model from a URI."""
         try:
             model = mlflow.pyfunc.load_model(model_uri)
             logger.info(f"Loaded model from {model_uri}")
@@ -400,16 +420,7 @@ class MLflowManager:
         run_ids: list[str],
         metric_names: list[str],
     ) -> dict[str, dict[str, float]]:
-        """
-        Compare metrics across multiple runs.
-
-        Args:
-            run_ids: List of run IDs to compare
-            metric_names: List of metric names to compare
-
-        Returns:
-            Dict mapping run_id to {metric_name: value}
-        """
+        """Compare metrics across multiple runs."""
         results = {}
         for run_id in run_ids:
             run_data = self.get_run_metrics(run_id)

@@ -18,7 +18,7 @@ global:
   focal_gamma: 2.0              # For focal/combo loss
   
   preprocess: false
-  checkpoint_every: 1
+  checkpoint_every: 3
   early_stopping: 12
   skip_failed: true
   clear_memory_between_datasets: true
@@ -73,4 +73,4 @@ auto:
     - "unet"
   
   skip_for_large:
-    # - "unet"
+    - "unet"

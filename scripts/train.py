@@ -30,8 +30,6 @@ from src.training.trainer import SeismicTrainer
 from src.utils.hdf5_utils import load_shot_indices, validate_hdf5
 from src.utils.logger import create_task_name, setup_logger
 
-# In scripts/train.py
-
 
 @click.command()
 @click.option("--config", "-c", required=True, help="Path to config YAML file")
@@ -80,9 +78,6 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--search-best", is_flag=True, help="Search for best model after training"
 )
-# ============================================================
-# ADD THESE NEW OPTIONS
-# ============================================================
 @click.option(
     "--checkpoint-every",
     "-ce",
@@ -108,13 +103,8 @@ from src.utils.logger import create_task_name, setup_logger
               help='Loss function to use')
 @click.option('--dice-weight', type=float, default=0.5, help='Dice weight for combo loss')
 @click.option('--focal-gamma', type=float, default=2.0, help='Focal gamma for focal/combo loss')
-
-@click.option('--checkpoint-every', '-ce', type=int, default=5,
-              help='Save checkpoint every N epochs')
-@click.option('--early-stopping', '-es', type=int, default=5,
-              help='Early stopping patience')
-@click.option('--batch-size', '-b', type=int, help='Override batch size')
-@click.option('--cache-size', type=int, help='Override cache size')
+# 🔥 NEW: MLflow run ID option
+@click.option("--mlflow-run-id", help="MLflow run ID to continue (for resuming)")
 def main(
     config: str,
     resume: str,
@@ -131,7 +121,6 @@ def main(
     disable_autolog: bool,
     disable_system_metrics: bool,
     search_best: bool,
-    # NEW PARAMETERS
     checkpoint_every: int,
     early_stopping: int,
     batch_size: int,
@@ -140,7 +129,8 @@ def main(
     learning_rate: float,
     num_workers: int,
     dice_weight: float,
-    focal_gamma: float
+    focal_gamma: float,
+    mlflow_run_id: str,  # 🔥 NEW
 ):
     """Run the training pipeline."""
 
@@ -208,6 +198,8 @@ def main(
     logger.info(f"Log memory: {cfg.log_memory}")
     logger.info(f"Cache size: {cfg.cache_size}")
     logger.info(f"Preprocess: {cfg.preprocess}")
+    if mlflow_run_id:
+        logger.info(f"MLflow run ID: {mlflow_run_id} (continuing existing run)")
 
     # --- DATA DISCOVERY & PREPROCESSING ---
     chunk_dir = Path(cfg.chunk_dir) / cfg.dataset_name
@@ -344,7 +336,7 @@ def main(
     data_manager = ChunkedDataManager(
         chunk_dir=chunk_dir,
         manifest=manifest,
-        cache_size=cfg.cache_size,  # ← From config
+        cache_size=cfg.cache_size,
         shuffle_chunks=True,
     )
 
@@ -393,11 +385,6 @@ def main(
     # --- MODEL INITIALIZATION ---
     logger.info(f"\nInitializing model: {model}")
 
-    # ============================================================
-    # MODEL INITIALIZATION
-    # ============================================================
-    logger.info(f"\nInitializing model: {model}")
-
     # Map CLI model name to display name
     model_display_names = {
         "unet": "UNet",
@@ -418,7 +405,6 @@ def main(
     logger.info(f"\nModel: {model_name}")
     logger.info(f"  Parameters: {total_params:,}")
 
-
     # Optimizer and loss (using configurable class weights)
     optimizer = torch.optim.Adam(model_obj.parameters(), lr=cfg.learning_rate)
 
@@ -431,7 +417,7 @@ def main(
 
     logger.info(f"\nClass weights: {class_weights_tensor.tolist()}")
 
-    # Trainer
+    # 🔥 NEW: Trainer with MLflow run ID
     trainer = SeismicTrainer(
         model=model_obj,
         dataloaders=dataloaders,
@@ -439,11 +425,11 @@ def main(
         optimizer=optimizer,
         config=cfg,
         model_name=model_name,
+        mlflow_run_id=mlflow_run_id,  # 🔥 Pass run ID
     )
 
     # Train
     trainer.fit(resume_from=resume, verbose=cfg.verbose_training)
-    # In train.py, after trainer.fit():
 
     if search_best:
         logger.info("\n" + "=" * 60)
@@ -493,3 +479,4 @@ def main(
 
 if __name__ == "__main__":
     main()
+    

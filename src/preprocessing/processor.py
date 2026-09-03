@@ -2,7 +2,6 @@
 Shot processing logic for seismic data with validation and logging.
 """
 
-
 import numpy as np
 from loguru import logger
 
@@ -15,12 +14,14 @@ class ShotProcessor:
         target_traces: int = 1578,
         n_samples: int = 751,
         strip_width: int = 8,
+        sample_rate_ms: float = 2.0,
         log_level: str = "INFO",
     ):
         self.target_traces = target_traces
         self.n_samples = n_samples
         self.strip_width = strip_width
         self.half_width = strip_width // 2
+        self.sample_rate_ms = sample_rate_ms
         self.log_level = log_level
         self.stats = []
 
@@ -28,9 +29,7 @@ class ShotProcessor:
         """
         Validate and clean picks.
 
-        Returns:
-            cleaned_picks: Picks with invalid values clipped
-            stats: Dictionary of validation statistics
+        IMPORTANT: picks should already be in SAMPLES, not milliseconds.
         """
         total = len(picks)
         valid_mask = (picks > 0) & (picks < self.n_samples)
@@ -56,34 +55,22 @@ class ShotProcessor:
             stats["mean_pick"] = None
             stats["median_pick"] = None
 
-        # Warn if many invalid picks
         if invalid_count > total * 0.1:
             logger.warning(
                 f"High invalid picks: {invalid_count}/{total} ({invalid_count / total:.1%})"
             )
 
-        # Clip out-of-range picks to valid range
         cleaned_picks = np.clip(picks, 0, self.n_samples - 1)
-
         return cleaned_picks, stats
 
     def create_mask_vectorized(self, picks: np.ndarray) -> np.ndarray:
-        """
-        Create 3-class segmentation mask using vectorized operations.
-
-        Class mapping:
-            0: Before first break
-            2: Strip around first break
-            1: After first break
-        """
+        """Create 3-class segmentation mask."""
         n_traces = len(picks)
         mask = np.zeros((n_traces, self.n_samples), dtype=np.int64)
 
-        # Create sample index grid using broadcasting
         samples = np.arange(self.n_samples).reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
-        # Vectorized conditions
         strip_mask = (samples >= picks_expanded - self.half_width) & (
             samples <= picks_expanded + self.half_width
         )
@@ -92,7 +79,6 @@ class ShotProcessor:
         mask[strip_mask] = 2
         mask[after_mask] = 1
 
-        # Invalid picks (0 or negative) become class 0
         invalid = (picks <= 0) | (picks >= self.n_samples)
         mask[invalid, :] = 0
 
@@ -102,13 +88,11 @@ class ShotProcessor:
         self, mask: np.ndarray, picks: np.ndarray, shot_id: int | None = None
     ) -> bool:
         """Validate mask quality."""
-        # Check that strip exists
         strip_count = np.sum(mask == 2)
         if strip_count == 0:
             logger.warning(f"Shot {shot_id}: No strip (class 2) found in mask!")
             return False
 
-        # Check strip is near the pick (within ±10 samples)
         issues = 0
         for i, pick in enumerate(picks):
             if pick > 0 and pick < self.n_samples:
@@ -117,7 +101,7 @@ class ShotProcessor:
                     strip_center = np.median(strip_indices)
                     if abs(strip_center - pick) > 10:
                         issues += 1
-                        if issues <= 3:  # Log only first 3 issues
+                        if issues <= 3:
                             logger.debug(
                                 f"Shot {shot_id}, trace {i}: strip center {strip_center:.0f} far from pick {pick:.0f}"
                             )
@@ -155,26 +139,46 @@ class ShotProcessor:
             }
 
     def process_shot(
-        self,
-        shot_data: np.ndarray,
-        shot_picks: np.ndarray,
-        shot_id: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, dict]:
+    self,
+    shot_data: np.ndarray,
+    shot_picks: np.ndarray,
+    shot_id: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, dict]:
         """
-        Process a single shot: validate, pad/crop, create mask.
-
-        Returns:
-            processed_data: (target_traces, n_samples) float32
-            processed_mask: (target_traces, n_samples) int64
-            stats: Dictionary of processing statistics
+        Process a single shot: convert ms to samples, validate, pad/crop, create mask.
         """
         actual_traces = shot_data.shape[0]
 
         if self.log_level == "DEBUG" and shot_id is not None:
             logger.debug(f"Processing shot {shot_id}: {actual_traces} traces")
 
-        # Validate and clean picks
-        cleaned_picks, _ = self.validate_picks(shot_picks)
+        # Find valid picks (> 0)
+        valid_picks = shot_picks[shot_picks > 0]
+        if len(valid_picks) > 0:
+            max_pick = valid_picks.max()
+            min_pick = valid_picks.min()
+            
+            # If picks are in milliseconds, they'll be > 300 and < 2000
+            # If picks are in samples, they'll be < 751
+            if max_pick > 300 and max_pick < 2000:
+                # Convert ms to samples
+                shot_picks = shot_picks / self.sample_rate_ms
+                shot_picks = np.round(shot_picks).astype(np.float32)
+                if self.log_level == "DEBUG":
+                    logger.debug(
+                        f"Shot {shot_id}: converted picks from ms to samples "
+                        f"(max: {max_pick} ms → {max_pick / self.sample_rate_ms:.1f} samples, "
+                        f"÷ {self.sample_rate_ms})"
+                    )
+            elif max_pick > 2000:
+                # This shouldn't happen - log warning
+                logger.warning(
+                    f"Shot {shot_id}: max pick {max_pick} is outside expected range "
+                    f"(0-1500 ms or 0-{self.n_samples} samples)"
+                )
+
+        # NOW validate picks (they are now in samples)
+        cleaned_picks, pick_stats = self.validate_picks(shot_picks)
 
         # Pad or crop to target_traces
         if actual_traces < self.target_traces:
@@ -256,3 +260,4 @@ class ShotProcessor:
     def reset_stats(self):
         """Reset accumulated statistics."""
         self.stats = []
+        
