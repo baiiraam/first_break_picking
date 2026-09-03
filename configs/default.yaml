@@ -33,7 +33,7 @@ learning_rate: 0.001              # Learning rate
 n_epochs: 5                      # Number of epochs to train
 device: "mps"                     # "cpu", "cuda", or "mps"
 num_workers: 0                    # Number of CPU workers for data loading
-checkpoint_every: 1               # Save checkpoint every N epochs
+checkpoint_every: 3               # Save checkpoint every N epochs
 
 # ============================================================
 # GPU PARAMETERS

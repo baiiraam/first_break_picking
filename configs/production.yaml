@@ -4,5 +4,5 @@
 # Usually set to lower memory usage and faster inference
 batch_size: 1
 num_workers: 2
-checkpoint_every: 1
+checkpoint_every: 3
 device: "mps"

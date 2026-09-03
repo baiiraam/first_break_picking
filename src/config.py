@@ -24,6 +24,7 @@ class SeismicConfig:
     target_traces: int = 1578
     n_samples: int = 751
     strip_width: int = 8
+    sample_rate_ms: float = 2.0
     chunk_size: int = 69
     random_seed: int = 42
     train_split: float = 0.8

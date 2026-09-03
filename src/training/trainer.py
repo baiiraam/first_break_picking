@@ -45,10 +45,12 @@ class SeismicTrainer:
         optimizer: torch.optim.Optimizer,
         config: SeismicConfig,
         model_name: str = "unet",
+        mlflow_run_id: str | None = None,  # 🔥 NEW: Accept existing run ID
     ):
         self.config = config
         self.model_name = model_name
         self.device = self._setup_device(config.device)
+        self.mlflow_run_id = mlflow_run_id  # 🔥 NEW: Store run ID
 
         # Setup model
         if config.multi_gpu and torch.cuda.device_count() > 1:
@@ -86,6 +88,8 @@ class SeismicTrainer:
 
         logger.info(f"Model registry: {self.registry_dir}")
         logger.info(f"TensorBoard: {self.tb_dir}")
+        if self.mlflow_run_id:
+            logger.info(f"MLflow run ID to continue: {self.mlflow_run_id}")
 
     def _setup_device(self, requested_device: str) -> torch.device:
         """Setup device with fallback."""
@@ -136,8 +140,13 @@ class SeismicTrainer:
             )
         return None
 
-    def load_checkpoint(self, checkpoint_path: str) -> int:
-        """Load checkpoint with full state restoration."""
+    def load_checkpoint(self, checkpoint_path: str) -> tuple[int, str | None]:
+        """
+        Load checkpoint with full state restoration.
+        
+        Returns:
+            tuple: (epoch, mlflow_run_id)
+        """
         logger.info(f"Loading checkpoint: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
@@ -173,10 +182,17 @@ class SeismicTrainer:
                     f"Scheduler state mismatch: {e}, using fresh scheduler state"
                 )
 
+        # 🔥 NEW: Get MLflow run ID from checkpoint if available
+        mlflow_run_id = checkpoint.get("mlflow_run_id")
+        if mlflow_run_id:
+            logger.info(f"Found MLflow run ID in checkpoint: {mlflow_run_id}")
+        else:
+            logger.info("No MLflow run ID found in checkpoint (will create new run)")
+
         logger.info(
             f"Resumed from epoch {checkpoint['epoch']} with val_loss={checkpoint.get('val_loss', 'N/A')}"
         )
-        return checkpoint["epoch"]
+        return checkpoint["epoch"], mlflow_run_id
 
     def get_memory_usage(self) -> dict[str, float]:
         """Get current memory usage without sudo."""
@@ -608,22 +624,58 @@ class SeismicTrainer:
 
         # Setup
         start_epoch = 0
-        if resume_from and os.path.exists(resume_from):
-            start_epoch = self.load_checkpoint(resume_from)
+        mlflow_run_id_from_checkpoint = None
 
+        # 🔥 NEW: Load checkpoint and get MLflow run ID
+        if resume_from and os.path.exists(resume_from):
+            start_epoch, mlflow_run_id_from_checkpoint = self.load_checkpoint(resume_from)
+            
+            # Use the run ID from checkpoint if available
+            if mlflow_run_id_from_checkpoint:
+                self.mlflow_run_id = mlflow_run_id_from_checkpoint
+                logger.info(f"📊 Will continue MLflow run: {self.mlflow_run_id}")
+
+        # 🔥 NEW: Start or continue MLflow run
         config_dict = self.config.to_dict()
         config_dict["model_name"] = self.model_name
 
-        # Start MLflow run with tags
-        self.mlflow_manager.start_run(
-            config_dict=config_dict,
-            tags={
-                "dataset": self.config.dataset_name,
-                "model_type": self.model_name,
-                "device": str(self.device),
-                "experiment_type": "training",
-            },
-        )
+        if self.mlflow_run_id:
+            # Continue existing run
+            try:
+                self.mlflow_manager.set_run(self.mlflow_run_id)
+                logger.info(f"✅ Continued MLflow run: {self.mlflow_run_id}")
+                
+                # Log that this is a resume
+                self.mlflow_manager.set_tag("resumed", "True")
+                self.mlflow_manager.set_tag("resumed_from_epoch", str(start_epoch))
+                self.mlflow_manager.set_tag("resume_time", datetime.now(timezone.utc).isoformat())
+                
+            except Exception as e:
+                logger.warning(f"Could not continue MLflow run: {e}")
+                logger.info("Starting new MLflow run instead...")
+                self.mlflow_manager.start_run(
+                    config_dict=config_dict,
+                    tags={
+                        "dataset": self.config.dataset_name,
+                        "model_type": self.model_name,
+                        "device": str(self.device),
+                        "experiment_type": "training",
+                        "run_type": "new_after_failed_resume",
+                    },
+                )
+        else:
+            # Start new run
+            self.mlflow_manager.start_run(
+                config_dict=config_dict,
+                tags={
+                    "dataset": self.config.dataset_name,
+                    "model_type": self.model_name,
+                    "device": str(self.device),
+                    "experiment_type": "training",
+                    "run_type": "new",
+                },
+            )
+
         run_id = self.mlflow_manager.run_id
 
         logger.info(f"Starting training from epoch {start_epoch}")
@@ -743,7 +795,7 @@ class SeismicTrainer:
                     logger.info(f"📊 Memory: allocated={memory['allocated']:.2f} GB")
 
             # Gradient & Weight Norms (every 5 epochs)
-            if epoch % 5 == 0:
+            if epoch % 3 == 0:
                 grad_norm = compute_gradient_norm(self.model)
                 weight_norm = compute_weight_norm(self.model)
                 self.writer.add_scalar("Norms/gradient", grad_norm, epoch)
@@ -799,6 +851,8 @@ class SeismicTrainer:
 
             # Training time
             epoch_duration = (datetime.now(timezone.utc) - epoch_start).total_seconds()
+            epoch_times.append(epoch_duration)
+
             self.mlflow_manager.log_metrics(
                 {"epoch_duration_seconds": epoch_duration}, step=epoch
             )
@@ -839,15 +893,13 @@ class SeismicTrainer:
 
         # Finalize
         total_time = sum(epoch_times)
-        self.mlflow_manager.log_metrics(
-            {
-                "total_training_time_seconds": total_time,
-                "average_epoch_time_seconds": total_time / len(epoch_times)
-                if epoch_times
-                else 0,
-            },
-            step=epoch,
-        )
+        avg_time = total_time / len(epoch_times)
+        self.mlflow_manager.log_metrics({
+            "total_training_time_seconds": total_time,
+            "average_epoch_time_seconds": total_time / len(epoch_times) if epoch_times else 0
+        }, step=epoch)
+        logger.info(f"Total training time: {total_time:.1f}")
+        logger.info(f"Average epoch time: {avg_time:.1f}")
 
         self.writer.close()
         self.mlflow_manager.end_run()
@@ -898,10 +950,13 @@ class SeismicTrainer:
             "model_name": self.model_name,
             "dataset_name": self.config.dataset_name,
             "timestamp": timestamp,
+            # 🔥 NEW: Save MLflow run ID
+            "mlflow_run_id": self.mlflow_manager.run_id,
         }
 
         torch.save(checkpoint, save_path)
         logger.info(f"Checkpoint saved: {save_path}")
+        logger.info(f"  MLflow run ID saved: {self.mlflow_manager.run_id}")
         self.mlflow_manager.log_artifact(str(save_path), artifact_path="checkpoints")
 
     def _save_best_model(self, best_val_loss: float):
@@ -914,6 +969,7 @@ class SeismicTrainer:
             self.model.module if isinstance(self.model, nn.DataParallel) else self.model
         )
 
+        # 🔥 NEW: Save MLflow run ID in best model too
         torch.save(
             {
                 "model_state_dict": model_to_save.state_dict(),
@@ -922,11 +978,13 @@ class SeismicTrainer:
                 "model_name": self.model_name,
                 "dataset_name": self.config.dataset_name,
                 "timestamp": timestamp,
+                "mlflow_run_id": self.mlflow_manager.run_id,  # 🔥 NEW
             },
             save_path,
         )
 
         logger.info(f"Best model saved: {save_path} (val_loss: {best_val_loss:.4f})")
+        logger.info(f"  MLflow run ID saved: {self.mlflow_manager.run_id}")
 
         # Also save as 'best' without timestamp for easy access
         best_path = (
@@ -940,6 +998,7 @@ class SeismicTrainer:
                 "model_name": self.model_name,
                 "dataset_name": self.config.dataset_name,
                 "timestamp": timestamp,
+                "mlflow_run_id": self.mlflow_manager.run_id,  # 🔥 NEW
             },
             best_path,
         )
