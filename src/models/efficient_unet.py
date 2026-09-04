@@ -14,7 +14,11 @@ class EfficientUNet(nn.Module):
     """
 
     def __init__(
-        self, in_channels: int = 1, out_channels: int = 3, pretrained: bool = True
+        self,
+        in_channels: int = 1,
+        out_channels: int = 3,
+        pretrained: bool = True,
+        freeze_encoder: bool = True,  # ✅ NEW: Control encoder freezing
     ):
         super().__init__()
 
@@ -25,31 +29,19 @@ class EfficientUNet(nn.Module):
         else:
             self.encoder = efficientnet_b0(weights=None)
 
-        # Freeze encoder weights (optional)
-        # for param in self.encoder.parameters():
-        #     param.requires_grad = False
+        # ✅ Remove redundant stem - EfficientNet's features[0] already has conv layer
+        # We'll adapt the first conv layer for single-channel input
+        self._adapt_first_conv(in_channels)
 
-        # Expand input to 3 channels
-        self.stem = nn.Sequential(
-            nn.Conv2d(in_channels, 3, kernel_size=3, padding=1),
-            nn.BatchNorm2d(3),
-            nn.ReLU(inplace=True),
-        )
+        # ✅ Freeze encoder if requested
+        if freeze_encoder:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
+            print("🔒 EfficientNet encoder frozen")
 
         # CORRECT EfficientNet-B0 feature extraction
-        # The actual channel counts:
-        # features[0]: 32 channels  (stem)
-        # features[1]: 16 channels  (block1)
-        # features[2]: 24 channels  (block2)
-        # features[3]: 40 channels  (block3)
-        # features[4]: 80 channels  (block4)
-        # features[5]: 112 channels (block5)
-        # features[6]: 192 channels (block6)
-        # features[7]: 320 channels (block7)
-        # features[8]: 1280 channels (block8)
-
         self.enc1 = nn.Sequential(
-            self.encoder.features[0],  # 32 channels
+            self.encoder.features[0],  # 32 channels (after adaptation)
             self.encoder.features[1],  # 16 channels
         )  # 16 channels
         self.enc2 = self.encoder.features[2]  # 24 channels
@@ -61,17 +53,51 @@ class EfficientUNet(nn.Module):
         self.enc8 = self.encoder.features[8]  # 1280 channels
 
         # --- Decoder: U-Net style ---
-        # dec8: 1280 → 320 (then concat with e7: 320 → 640)
         self.dec8 = self._decoder_block(1280, 320)
-        self.dec7 = self._decoder_block(640, 192)  # 320+320=640 → 192
-        self.dec6 = self._decoder_block(384, 112)  # 192+192=384 → 112
-        self.dec5 = self._decoder_block(224, 80)  # 112+112=224 → 80
-        self.dec4 = self._decoder_block(160, 40)  # 80+80=160 → 40
-        self.dec3 = self._decoder_block(80, 24)  # 40+40=80 → 24
-        self.dec2 = self._decoder_block(48, 16)  # 24+24=48 → 16
-        self.dec1 = self._decoder_block(32, 16)  # 16+16=32 → 16
+        self.dec7 = self._decoder_block(640, 192)
+        self.dec6 = self._decoder_block(384, 112)
+        self.dec5 = self._decoder_block(224, 80)
+        self.dec4 = self._decoder_block(160, 40)
+        self.dec3 = self._decoder_block(80, 24)
+        self.dec2 = self._decoder_block(48, 16)
+        self.dec1 = self._decoder_block(32, 16)
 
         self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
+
+    def _adapt_first_conv(self, in_channels: int):
+        """
+        Adapt the first convolution layer to accept arbitrary input channels.
+        If in_channels != 3, replace the first conv with a new one.
+        """
+        # Get the first convolution layer from features[0]
+        first_conv = self.encoder.features[0][0]  # First layer is Conv2d
+
+        if in_channels != first_conv.in_channels:
+            # Create new conv with same parameters but adjusted input channels
+            new_conv = nn.Conv2d(
+                in_channels,
+                first_conv.out_channels,
+                kernel_size=first_conv.kernel_size,
+                stride=first_conv.stride,
+                padding=first_conv.padding,
+                bias=first_conv.bias is not None,
+            )
+
+            # Initialize weights (average the original weights if possible)
+            if in_channels == 1:
+                # Average RGB weights to grayscale
+                with torch.no_grad():
+                    new_conv.weight.data = first_conv.weight.data.mean(
+                        dim=1, keepdim=True
+                    )
+            else:
+                # For other channel counts, use normal initialization
+                nn.init.kaiming_normal_(
+                    new_conv.weight, mode="fan_out", nonlinearity="relu"
+                )
+
+            # Replace the first conv
+            self.encoder.features[0][0] = new_conv
 
     def _decoder_block(self, in_channels, out_channels):
         return nn.Sequential(
@@ -96,8 +122,6 @@ class EfficientUNet(nn.Module):
             x = F.pad(x, (0, pad_w, 0, pad_h))
 
         # Encoder
-        x = self.stem(x)
-
         e1 = self.enc1(x)  # 16 channels
         e2 = self.enc2(e1)  # 24 channels
         e3 = self.enc3(e2)  # 40 channels

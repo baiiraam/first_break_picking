@@ -75,7 +75,7 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
     device_obj = torch.device(cfg.device)
 
     # Determine model type from checkpoint or config
-    model_type = getattr(cfg, 'model_name', 'mpslight')
+    model_type = getattr(cfg, "model_name", "mpslight")
     model_obj = create_model(model_type, in_channels=1, out_channels=3)
 
     checkpoint = torch.load(model, map_location=device_obj)

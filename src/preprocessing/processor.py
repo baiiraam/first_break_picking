@@ -1,13 +1,18 @@
 """
-Shot processing logic for seismic data with validation and logging.
+Shot processing logic for seismic data with thread-safe buffer management.
 """
+
+import threading
 
 import numpy as np
 from loguru import logger
 
 
 class ShotProcessor:
-    """Process individual shots with vectorized operations and validation."""
+    """
+    Process individual shots with vectorized operations and validation.
+    Thread-safe: each thread/worker should use its own instance.
+    """
 
     def __init__(
         self,
@@ -15,6 +20,7 @@ class ShotProcessor:
         n_samples: int = 751,
         strip_width: int = 8,
         sample_rate_ms: float = 2.0,
+        picks_unit: str = "auto",  # ✅ NEW: "auto", "ms", "samples"
         log_level: str = "INFO",
     ):
         self.target_traces = target_traces
@@ -22,14 +28,30 @@ class ShotProcessor:
         self.strip_width = strip_width
         self.half_width = strip_width // 2
         self.sample_rate_ms = sample_rate_ms
+        self.picks_unit = picks_unit
         self.log_level = log_level
+
+        # ✅ Thread-local buffers for safety
+        self._local = threading.local()
+
+        # Pre-compute sample array for mask creation
+        self._samples = np.arange(n_samples, dtype=np.int64)
+
+        # Stats collection (not thread-safe, but each instance has its own)
         self.stats = []
+
+    def _get_buffers(self):
+        """Get or create thread-local buffers."""
+        if not hasattr(self._local, "data_buffer"):
+            self._local.data_buffer = np.zeros(
+                (self.target_traces, self.n_samples), dtype=np.float32
+            )
+            self._local.picks_buffer = np.zeros(self.target_traces, dtype=np.float32)
+        return self._local.data_buffer, self._local.picks_buffer
 
     def validate_picks(self, picks: np.ndarray) -> tuple[np.ndarray, dict]:
         """
         Validate and clean picks.
-
-        IMPORTANT: picks should already be in SAMPLES, not milliseconds.
         """
         total = len(picks)
         valid_mask = (picks > 0) & (picks < self.n_samples)
@@ -63,12 +85,40 @@ class ShotProcessor:
         cleaned_picks = np.clip(picks, 0, self.n_samples - 1)
         return cleaned_picks, stats
 
+    def _convert_picks(self, picks: np.ndarray) -> np.ndarray:
+        """
+        Convert picks from milliseconds to samples if needed.
+        """
+        # ✅ Configurable unit detection
+        if self.picks_unit == "samples":
+            return picks
+
+        if self.picks_unit == "ms":
+            return picks / self.sample_rate_ms
+
+        # Auto-detect (default)
+        max_pick = picks.max() if len(picks) > 0 else 0
+
+        # ✅ Make threshold configurable via class attribute
+        ms_threshold_low = getattr(self, "_ms_threshold_low", 300)
+        ms_threshold_high = getattr(self, "_ms_threshold_high", 2000)
+
+        if ms_threshold_low < max_pick < ms_threshold_high:
+            # Convert ms to samples
+            converted = picks / self.sample_rate_ms
+            logger.debug(
+                f"Converted picks from ms to samples (max: {max_pick:.1f} ms → {max_pick / self.sample_rate_ms:.1f} samples)"
+            )
+            return converted
+
+        return picks
+
     def create_mask_vectorized(self, picks: np.ndarray) -> np.ndarray:
         """Create 3-class segmentation mask."""
         n_traces = len(picks)
         mask = np.zeros((n_traces, self.n_samples), dtype=np.int64)
 
-        samples = np.arange(self.n_samples).reshape(1, -1)
+        samples = self._samples.reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
         strip_mask = (samples >= picks_expanded - self.half_width) & (
@@ -139,70 +189,52 @@ class ShotProcessor:
             }
 
     def process_shot(
-    self,
-    shot_data: np.ndarray,
-    shot_picks: np.ndarray,
-    shot_id: int | None = None,
-) -> tuple[np.ndarray, np.ndarray, dict]:
+        self,
+        shot_data: np.ndarray,
+        shot_picks: np.ndarray,
+        shot_id: int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, dict]:
         """
-        Process a single shot: convert ms to samples, validate, pad/crop, create mask.
+        Process a single shot: convert units, validate, pad/crop, create mask.
+        Thread-safe: uses thread-local buffers.
         """
         actual_traces = shot_data.shape[0]
 
         if self.log_level == "DEBUG" and shot_id is not None:
             logger.debug(f"Processing shot {shot_id}: {actual_traces} traces")
 
-        # Find valid picks (> 0)
-        valid_picks = shot_picks[shot_picks > 0]
-        if len(valid_picks) > 0:
-            max_pick = valid_picks.max()
-            min_pick = valid_picks.min()
-            
-            # If picks are in milliseconds, they'll be > 300 and < 2000
-            # If picks are in samples, they'll be < 751
-            if max_pick > 300 and max_pick < 2000:
-                # Convert ms to samples
-                shot_picks = shot_picks / self.sample_rate_ms
-                shot_picks = np.round(shot_picks).astype(np.float32)
-                if self.log_level == "DEBUG":
-                    logger.debug(
-                        f"Shot {shot_id}: converted picks from ms to samples "
-                        f"(max: {max_pick} ms → {max_pick / self.sample_rate_ms:.1f} samples, "
-                        f"÷ {self.sample_rate_ms})"
-                    )
-            elif max_pick > 2000:
-                # This shouldn't happen - log warning
-                logger.warning(
-                    f"Shot {shot_id}: max pick {max_pick} is outside expected range "
-                    f"(0-1500 ms or 0-{self.n_samples} samples)"
-                )
+        # Convert picks (configurable unit detection)
+        shot_picks = self._convert_picks(shot_picks)
 
-        # NOW validate picks (they are now in samples)
+        # Validate picks
         cleaned_picks, pick_stats = self.validate_picks(shot_picks)
+
+        # Get thread-local buffers
+        data_buffer, picks_buffer = self._get_buffers()
 
         # Pad or crop to target_traces
         if actual_traces < self.target_traces:
-            data_padded = np.zeros(
-                (self.target_traces, self.n_samples), dtype=np.float32
-            )
-            picks_padded = np.zeros(self.target_traces, dtype=np.float32)
-            data_padded[:actual_traces, :] = shot_data
-            picks_padded[:actual_traces] = cleaned_picks
-            shot_data = data_padded
-            shot_picks = picks_padded
-            if self.log_level == "INFO":
+            data_buffer.fill(0)
+            picks_buffer.fill(0)
+            data_buffer[:actual_traces, :] = shot_data
+            picks_buffer[:actual_traces] = cleaned_picks
+            shot_data = data_buffer[: self.target_traces, :].copy()
+            shot_picks = picks_buffer[: self.target_traces].copy()
+            if self.log_level == "DEBUG":
                 logger.debug(
                     f"Shot {shot_id}: padded {actual_traces} → {self.target_traces} traces"
                 )
         elif actual_traces > self.target_traces:
-            shot_data = shot_data[: self.target_traces, :]
-            shot_picks = cleaned_picks[: self.target_traces]
-            if self.log_level == "INFO":
+            shot_data = shot_data[: self.target_traces, :].copy()
+            shot_picks = cleaned_picks[: self.target_traces].copy()
+            if self.log_level == "DEBUG":
                 logger.debug(
                     f"Shot {shot_id}: cropped {actual_traces} → {self.target_traces} traces"
                 )
         else:
-            shot_picks = cleaned_picks
+            # ✅ Make copies to avoid mutating input arrays
+            shot_data = shot_data.copy()
+            shot_picks = cleaned_picks.copy()
 
         # Create mask
         mask = self.create_mask_vectorized(shot_picks)
@@ -260,4 +292,10 @@ class ShotProcessor:
     def reset_stats(self):
         """Reset accumulated statistics."""
         self.stats = []
-        
+
+    def set_unit_thresholds(self, low: int = 300, high: int = 2000):
+        """
+        Set thresholds for auto-detecting ms vs samples.
+        """
+        self._ms_threshold_low = low
+        self._ms_threshold_high = high

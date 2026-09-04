@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.models.factory import create_model
+from src.models.loader import load_model_from_checkpoint  # ✅ NEW
 from src.utils.logger import create_task_name, setup_logger
 
 
@@ -28,8 +29,8 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--model-type",
     "-t",
-    type=click.Choice(["unet", "mpslight"]),
-    default="unet",
+    type=click.Choice(["unet", "mpslight", "light", "nano", "tiny", "pico", "mobile", "efficient"]),
+    default="mpslight",
     help="Model architecture type",
 )
 @click.option(
@@ -74,30 +75,24 @@ def main(
     # Load model based on type
     device_obj = torch.device(device)
 
-    logger.info(f"\nInitializing {model_type} model...")
+    logger.info(f"\nLoading model...")
 
-    model_obj = create_model(model_type, in_channels=1, out_channels=3)
-
-    # Load checkpoint
+    # ✅ Use unified loader
     try:
-        checkpoint = torch.load(model, map_location=device_obj)
-        if "model_state_dict" in checkpoint:
-            model_obj.load_state_dict(checkpoint["model_state_dict"])
-            logger.info(
-                f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}"
-            )
-            logger.info(f"  Val loss: {checkpoint.get('val_loss', 'N/A')}")
-        else:
-            model_obj.load_state_dict(checkpoint)
-            logger.info("Loaded model state dict")
-    except Exception as e: # noqa: BLE001
+        model_obj = load_model_from_checkpoint(
+            model_path=model,
+            model_type=model_type,
+            device=device_obj,
+        )
+        logger.info("✅ Model loaded successfully")
+    except Exception as e:
         logger.error(f"Failed to load model: {e}")
         sys.exit(1)
 
     model_obj = model_obj.to(device_obj)
     model_obj.eval()
 
-    logger.info("✅ Model loaded successfully")
+    logger.info("✅ Model ready for export")
 
     # Create output directory
     output_dir = Path(output)
@@ -117,7 +112,7 @@ def main(
             logger.info(
                 f"  File size: {scripted_path.stat().st_size / (1024 * 1024):.2f} MB"
             )
-        except Exception as e: # noqa: BLE001
+        except Exception as e:
             logger.error(f"  ❌ TorchScript export failed: {e}")
 
     # Export to ONNX
@@ -150,10 +145,10 @@ def main(
                 logger.info("  ✅ ONNX model verified")
             except ImportError:
                 logger.info("  ⚠️  ONNX library not installed, skipping verification")
-            except Exception as e: # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"  ⚠️  ONNX verification failed: {e}")
 
-        except Exception as e: # noqa: BLE001
+        except Exception as e:
             logger.error(f"  ❌ ONNX export failed: {e}")
 
     logger.info("\n" + "=" * 60)
@@ -174,3 +169,4 @@ def main(
 
 if __name__ == "__main__":
     main()
+    

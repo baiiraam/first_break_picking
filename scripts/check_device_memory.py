@@ -18,102 +18,9 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.utils.logger import setup_logger
+from src.utils.memory import MODEL_PROFILES, check_memory_usage
 
 logger = setup_logger(task_name="check_device_memory")
-
-
-# ============================================================
-# MODEL MEMORY PROFILES (REALISTIC)
-# ============================================================
-
-
-@dataclass
-class ModelProfile:
-    """Realistic memory and performance profile for a model."""
-
-    name: str
-    params: int
-    base_memory_mb: int
-    memory_per_batch_mb: int
-    memory_per_cache_mb: int
-    recommended_batch_size: int
-    recommended_cache_size: int
-
-
-MODEL_PROFILES = {
-    "pico": ModelProfile(
-        name="pico",
-        params=2_000,
-        base_memory_mb=200,
-        memory_per_batch_mb=100,
-        memory_per_cache_mb=50,
-        recommended_batch_size=8,
-        recommended_cache_size=5,
-    ),
-    "nano": ModelProfile(
-        name="nano",
-        params=10_000,
-        base_memory_mb=250,
-        memory_per_batch_mb=100,
-        memory_per_cache_mb=50,
-        recommended_batch_size=8,
-        recommended_cache_size=5,
-    ),
-    "tiny": ModelProfile(
-        name="tiny",
-        params=50_000,
-        base_memory_mb=300,
-        memory_per_batch_mb=150,
-        memory_per_cache_mb=75,
-        recommended_batch_size=6,
-        recommended_cache_size=4,
-    ),
-    "mpslight": ModelProfile(
-        name="mpslight",
-        params=1_700_000,
-        base_memory_mb=600,
-        memory_per_batch_mb=200,
-        memory_per_cache_mb=100,
-        recommended_batch_size=6,
-        recommended_cache_size=4,
-    ),
-    "light": ModelProfile(
-        name="light",
-        params=2_500_000,
-        base_memory_mb=800,
-        memory_per_batch_mb=250,
-        memory_per_cache_mb=125,
-        recommended_batch_size=5,
-        recommended_cache_size=4,
-    ),
-    "mobile": ModelProfile(
-        name="mobile",
-        params=3_500_000,
-        base_memory_mb=1000,
-        memory_per_batch_mb=300,
-        memory_per_cache_mb=150,
-        recommended_batch_size=4,
-        recommended_cache_size=3,
-    ),
-    "efficient": ModelProfile(
-        name="efficient",
-        params=5_000_000,
-        base_memory_mb=1200,
-        memory_per_batch_mb=350,
-        memory_per_cache_mb=175,
-        recommended_batch_size=4,
-        recommended_cache_size=3,
-    ),
-    "unet": ModelProfile(
-        name="unet",
-        params=31_000_000,
-        base_memory_mb=3000,
-        memory_per_batch_mb=1000,
-        memory_per_cache_mb=500,
-        recommended_batch_size=3,
-        recommended_cache_size=2,
-    ),
-}
 
 
 # ============================================================
@@ -170,7 +77,7 @@ def get_cuda_memory_info() -> dict[str, float] | None:
             "devices": devices,
         }
 
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not get CUDA memory info: {e}")
         return None
 
@@ -206,7 +113,7 @@ def get_mps_memory_info() -> dict[str, float] | None:
             "aggressive_limit_gb": min(mps_limit * 0.95, 16.0),
         }
 
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not get MPS memory info: {e}")
         return None
 
@@ -280,27 +187,6 @@ def get_recommended_memory_limits(info: dict) -> dict:
         recommendations["mps"] = None
 
     return recommendations
-
-
-def check_memory_usage() -> dict[str, float]:
-    """Check current system memory usage."""
-    mem = psutil.virtual_memory()
-
-    gpu_memory = {}
-    if torch.cuda.is_available():
-        gpu_memory["cuda_allocated"] = torch.cuda.memory_allocated() / 1e9
-
-    if torch.backends.mps.is_available():
-        gpu_memory["mps_allocated"] = torch.mps.current_allocated_memory() / 1e9
-
-    return {
-        "total_gb": mem.total / 1e9,
-        "available_gb": mem.available / 1e9,
-        "used_gb": mem.used / 1e9,
-        "percent": mem.percent,
-        "gpu": gpu_memory,
-    }
-
 
 # ============================================================
 # CONFIG VARIANT GENERATION
@@ -461,7 +347,7 @@ def get_all_model_recommendations(
                 device_type,
             )
             recommendations[model_name] = rec
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not calculate for {model_name}: {e}")
 
     return recommendations
@@ -788,7 +674,7 @@ def get_actual_data_shape(dataset_name: str) -> tuple[int, int]:
         if data is not None:
             # data shape: (n_shots, target_traces, n_samples)
             return (data.shape[1], data.shape[2])  # (traces, samples)
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not load chunk for {dataset_name}: {e}")
 
     return (0, 0)

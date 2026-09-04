@@ -1,9 +1,14 @@
 """
-TensorBoard utilities for visualization.
+TensorBoard utilities with bounded thread pool for asynchronous visualization.
 """
 
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -11,19 +16,77 @@ from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
 
-class TensorBoardManager:
+class BoundedThreadPoolExecutor(ThreadPoolExecutor):
     """
-    Manages TensorBoard logging with seismic-specific visualizations.
+    ThreadPoolExecutor with a bounded work queue to prevent memory overflow.
+
+    IMPORTANT: The queue must be reassigned AFTER super().__init__() because
+    ThreadPoolExecutor unconditionally creates its own unbounded queue.
     """
 
-    def __init__(self, log_dir: str, experiment_name: str, flush_secs: int = 10):
+    def __init__(self, max_workers: int = 1, max_queue_size: int = 5, *args, **kwargs):
+        # ✅ Call parent first - it creates self._work_queue
+        super().__init__(max_workers=max_workers, *args, **kwargs)
+
+        # ✅ Reassign AFTER super().__init__() so it isn't overwritten
+        self._work_queue = queue.Queue(max_queue_size)
+        self._max_queue_size = max_queue_size
+
+        logger.debug(
+            f"[TensorBoard] BoundedThreadPool: max_workers={max_workers}, "
+            f"max_queue_size={max_queue_size}"
+        )
+
+    def submit(self, fn, *args, **kwargs):
+        """
+        Submit a task with bounded queue.
+        Blocks if queue is full to prevent memory overflow.
+        """
+        try:
+            return super().submit(fn, *args, **kwargs)
+        except queue.Full:
+            logger.warning(
+                "[TensorBoard] Visualization queue full. Dropping frame to protect memory."
+            )
+            return None
+
+
+class TensorBoardManager:
+    """
+    Manages TensorBoard logging with asynchronous seismogram visualizations.
+    Uses bounded thread pool to prevent memory overflow.
+    """
+
+    def __init__(
+        self,
+        log_dir: str,
+        experiment_name: str,
+        flush_secs: int = 10,
+        async_viz: bool = True,
+        max_viz_workers: int = 1,
+        max_queue_size: int = 5,
+    ):
         self.log_dir = Path(log_dir) / experiment_name
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         self.writer = SummaryWriter(log_dir=str(self.log_dir), flush_secs=flush_secs)
         self.step = 0
+        self.async_viz = async_viz
 
-        logger.info(f"TensorBoard logging to: {self.log_dir}")
+        # ✅ Bounded thread pool for non-blocking visualizations
+        if async_viz:
+            self._viz_executor = BoundedThreadPoolExecutor(
+                max_workers=max_viz_workers,
+                max_queue_size=max_queue_size,
+                thread_name_prefix="tb_viz",
+            )
+            logger.info(
+                f"TensorBoard logging to: {self.log_dir} "
+                f"(async visualization, max_queue={max_queue_size})"
+            )
+        else:
+            self._viz_executor = None
+            logger.info(f"TensorBoard logging to: {self.log_dir} (sync visualization)")
 
     def set_step(self, step: int):
         """Set current step for logging."""
@@ -35,9 +98,7 @@ class TensorBoardManager:
             step = self.step
         self.writer.add_scalar(tag, value, step)
 
-    def log_scalars(
-        self, tag: str, values: dict[str, float], step: int | None = None
-    ):
+    def log_scalars(self, tag: str, values: dict[str, float], step: int | None = None):
         """Log multiple scalars."""
         if step is None:
             step = self.step
@@ -80,14 +141,7 @@ class TensorBoardManager:
         step: int | None = None,
     ):
         """
-        Log a seismogram with mask and predictions.
-
-        Args:
-            data: (n_traces, n_samples) seismic data
-            mask: (n_traces, n_samples) ground truth mask
-            predictions: (n_traces, n_samples) prediction mask
-            shot_id: Shot ID for labeling
-            step: Step number
+        Log a seismogram with mask and predictions (synchronous version).
         """
         if step is None:
             step = self.step
@@ -148,6 +202,52 @@ class TensorBoardManager:
         self.writer.add_figure(f"Seismogram/Shot_{shot_id}", fig, step)
         plt.close(fig)
 
+    def log_seismogram_async(
+        self,
+        data: np.ndarray,
+        mask: np.ndarray,
+        predictions: np.ndarray | None,
+        shot_id: int,
+        step: int | None = None,
+    ):
+        """
+        Asynchronously submit seismogram figure rendering with bounded queue.
+        """
+        if not self.async_viz or self._viz_executor is None:
+            self.log_seismogram(data, mask, predictions, shot_id, step)
+            return
+
+        if step is None:
+            step = self.step
+
+        # Copy arrays to avoid race conditions
+        data_copy = data.copy()
+        mask_copy = mask.copy()
+        preds_copy = predictions.copy() if predictions is not None else None
+
+        self._viz_executor.submit(
+            self._render_and_log_seismogram,
+            data_copy,
+            mask_copy,
+            preds_copy,
+            shot_id,
+            step,
+        )
+
+    def _render_and_log_seismogram(
+        self,
+        data: np.ndarray,
+        mask: np.ndarray,
+        predictions: np.ndarray | None,
+        shot_id: int,
+        step: int,
+    ):
+        """Internal worker method executing the heavy Matplotlib plotting."""
+        try:
+            self.log_seismogram(data, mask, predictions, shot_id, step)
+        except Exception as e:
+            logger.error(f"Failed to render async seismogram for shot {shot_id}: {e}")
+
     def log_learning_rate(self, lr: float, step: int | None = None):
         """Log learning rate."""
         if step is None:
@@ -169,9 +269,7 @@ class TensorBoardManager:
         self.writer.add_figure("Loss/Curves", fig, step)
         plt.close(fig)
 
-    def log_weights_histograms(
-        self, model: torch.nn.Module, step: int | None = None
-    ):
+    def log_weights_histograms(self, model: torch.nn.Module, step: int | None = None):
         """Log weight histograms for model layers."""
         if step is None:
             step = self.step
@@ -187,6 +285,10 @@ class TensorBoardManager:
         self.writer.flush()
 
     def close(self):
-        """Close the writer."""
+        """Close the writer and shutdown background threads."""
+        if self._viz_executor is not None:
+            logger.info("Shutting down TensorBoard visualization thread pool...")
+            self._viz_executor.shutdown(wait=True)
+            logger.info("Visualization thread pool shutdown complete")
         self.writer.close()
         logger.info("TensorBoard writer closed")

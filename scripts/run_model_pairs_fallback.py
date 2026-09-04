@@ -22,10 +22,10 @@ logger = setup_logger(task_name="model_pairs_fallback")
 # ============================================================
 
 MODEL_PAIRS = [
-    ["pico", "nano"],           # Pair 1: ~2K + ~10K params
-    ["tiny", "mpslight"],       # Pair 2: ~50K + ~1.7M params
-    ["light", "mobile"],        # Pair 3: ~2.5M + ~3.5M params
-    ["efficient", "unet"],      # Pair 4: ~5M + ~31M params
+    ["pico", "nano"],  # Pair 1: ~2K + ~10K params
+    ["tiny", "mpslight"],  # Pair 2: ~50K + ~1.7M params
+    ["light", "mobile"],  # Pair 3: ~2.5M + ~3.5M params
+    ["efficient", "unet"],  # Pair 4: ~5M + ~31M params
 ]
 
 DATASETS = ["Halfmile", "Sudbury", "Brunswick", "Lalor"]
@@ -40,6 +40,7 @@ SKIP_PER_DATASET = {
 # MAIN FUNCTION
 # ============================================================
 
+
 def run_model_pairs_with_fallback(
     model_pairs: list,
     datasets: list,
@@ -51,13 +52,13 @@ def run_model_pairs_with_fallback(
 ):
     """
     Run model pairs using batch_train.py for graceful fallback.
-    
+
     For each pair, runs batch_train.py with specific models filtered.
     """
-    
+
     total_pairs = len(model_pairs)
     pair_count = 0
-    
+
     logger.info("=" * 80)
     logger.info("🚀 MODEL PAIRS WITH GRACEFUL FALLBACK")
     logger.info("=" * 80)
@@ -66,13 +67,13 @@ def run_model_pairs_with_fallback(
     logger.info(f"Epochs: {epochs}")
     logger.info(f"Device: {device}")
     logger.info("=" * 80)
-    
+
     for pair_idx, model_pair in enumerate(model_pairs, 1):
         pair_count += 1
-        logger.info(f"\n{'='*80}")
+        logger.info(f"\n{'=' * 80}")
         logger.info(f"📊 PAIR {pair_idx}/{total_pairs}: {model_pair}")
-        logger.info(f"{'='*80}")
-        
+        logger.info(f"{'=' * 80}")
+
         # Filter models for this pair
         available_models = []
         for model in model_pair:
@@ -85,67 +86,63 @@ def run_model_pairs_with_fallback(
                     break
             if not is_skipped:
                 available_models.append(model)
-        
+
         if not available_models:
             logger.warning(f"⚠️  No models available for pair {pair_idx}")
             continue
-        
+
         # ============================================================
         # KEY: Use batch_train.py with --models filter
         # ============================================================
-        
+
         # Build command for batch_train.py
         cmd = [
             "python3.12",
             "scripts/batch_train.py",
-            "--auto-config",           # ← Enables smart config + fallback
-            "--epochs", str(epochs),
-            "--device", device,
+            "--auto-config",  # ← Enables smart config + fallback
+            "--epochs",
+            str(epochs),
+            "--device",
+            device,
         ]
-        
+
         # Add models (one per --models flag)
         for model in available_models:
             cmd.extend(["--models", model])
-        
+
         # Add datasets (one per --datasets flag)
         for dataset in datasets:
             cmd.extend(["--datasets", dataset])
-        
+
         # Add logging flags
         if verbose:
             cmd.append("--verbose")
         if log_memory:
             cmd.append("--log-memory")
-        
+
         if dry_run:
             logger.info(f"\n🏃 DRY RUN: {' '.join(cmd)}")
             continue
-        
+
         # Run batch_train.py for this pair
         logger.info(f"\n🚀 Running: {' '.join(cmd)}")
-        
+
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
             if result.returncode == 0:
                 logger.info(f"✅ SUCCESS! Pair {pair_idx} completed")
             else:
                 logger.error(f"❌ FAILED! Pair {pair_idx} had errors")
                 if result.stderr:
                     logger.error(f"   Error: {result.stderr[:500]}")
-                    
-        except Exception as e: # noqa BLE001
+
+        except Exception as e:  # noqa BLE001
             logger.error(f"❌ ERROR running pair: {e}")
-    
+
     logger.info("\n" + "=" * 80)
     logger.info("📊 MODEL PAIRS WITH FALLBACK - COMPLETE")
     logger.info("=" * 80)
-
 
 
 def run_dry_run(
@@ -160,7 +157,7 @@ def run_dry_run(
     verbose: bool = False,
 ):
     """Run an enhanced dry run with detailed information."""
-    
+
     logger.info("=" * 80)
     logger.info("🏃 ENHANCED DRY RUN")
     logger.info("=" * 80)
@@ -169,7 +166,7 @@ def run_dry_run(
     logger.info(f"Epochs: {epochs}")
     logger.info(f"Device: {device}")
     logger.info("=" * 80)
-    
+
     # Generate all combinations
     all_combinations = []
     for model_pair in model_pairs:
@@ -179,7 +176,7 @@ def run_dry_run(
                 if model in SKIP_PER_DATASET.get(dataset, []):
                     continue
                 all_combinations.append((dataset, model, model_pair))
-    
+
     # ============================================================
     # 1. SHOW FUNCTION CALL STACK
     # ============================================================
@@ -187,7 +184,7 @@ def run_dry_run(
         logger.info("\n" + "=" * 80)
         logger.info("📚 FUNCTION CALL STACK")
         logger.info("=" * 80)
-        
+
         call_stack = [
             ("1. run_model_pairs_with_fallback()", "Entry point"),
             ("   └── 2. build_command()", "Builds the command string"),
@@ -196,25 +193,37 @@ def run_dry_run(
             ("               └── 5. run_auto_batch_training()", "Auto-config training"),
             ("                   └── 6. train_dataset()", "Trains a single model"),
             ("                       └── 7. subprocess.run()", "Runs train.py"),
-            ("                           └── 8. scripts/train.py", "Single model training"),
-            ("                               └── 9. SeismicTrainer.fit()", "Main training loop"),
-            ("                                   └── 10. train_epoch()", "Runs one epoch"),
-            ("                                       └── 11. model.forward()", "Forward pass"),
+            (
+                "                           └── 8. scripts/train.py",
+                "Single model training",
+            ),
+            (
+                "                               └── 9. SeismicTrainer.fit()",
+                "Main training loop",
+            ),
+            (
+                "                                   └── 10. train_epoch()",
+                "Runs one epoch",
+            ),
+            (
+                "                                       └── 11. model.forward()",
+                "Forward pass",
+            ),
         ]
-        
+
         for call in call_stack:
             logger.info(f"  {call[0]}  # {call[1]}")
-        
+
         logger.info("\n  📌 Total combinations: {len(all_combinations)}")
         logger.info("  📌 Each combination follows this stack")
-    
+
     # ============================================================
     # 2. SHOW COMMANDS
     # ============================================================
     logger.info("\n" + "=" * 80)
     logger.info("📝 COMMANDS THAT WILL RUN")
     logger.info("=" * 80)
-    
+
     for idx, (dataset, model, model_pair) in enumerate(all_combinations, 1):
         pair_name = f"{model_pair[0]}+{model_pair[1]}"
         cmd = (
@@ -223,9 +232,11 @@ def run_dry_run(
             f"--models {model} --datasets {dataset} "
             f"--verbose --log-memory"
         )
-        logger.info(f"\n  [{idx}/{len(all_combinations)}] {dataset} | {model} (Pair: {pair_name})")
+        logger.info(
+            f"\n  [{idx}/{len(all_combinations)}] {dataset} | {model} (Pair: {pair_name})"
+        )
         logger.info(f"    🏃 {cmd}")
-    
+
     # ============================================================
     # 3. SHOW MLFLOW RUN DETAILS
     # ============================================================
@@ -233,26 +244,26 @@ def run_dry_run(
         logger.info("\n" + "=" * 80)
         logger.info("📊 MLFLOW RUN PREVIEW (First 3 combinations)")
         logger.info("=" * 80)
-        
+
         for idx, (dataset, model, model_pair) in enumerate(all_combinations[:3], 1):
             logger.info(f"\n  Run {idx}: {dataset}_{model}_epoch_{epochs}")
             logger.info("  ├── Parameters:")
-            logger.info(f"  │   ├── dataset: \"{dataset}\"")
-            logger.info(f"  │   ├── model: \"{model}\"")
-            logger.info("  │   ├── loss: \"combo\"")
+            logger.info(f'  │   ├── dataset: "{dataset}"')
+            logger.info(f'  │   ├── model: "{model}"')
+            logger.info('  │   ├── loss: "combo"')
             logger.info(f"  │   ├── epochs: {epochs}")
             logger.info("  │   └── batch_size: auto-detected")
             logger.info("  ├── Tags:")
-            logger.info(f"  │   ├── dataset: \"{dataset}\"")
-            logger.info(f"  │   └── model_type: \"{model}\"")
+            logger.info(f'  │   ├── dataset: "{dataset}"')
+            logger.info(f'  │   └── model_type: "{model}"')
             logger.info("  └── Artifacts:")
             logger.info("      ├── model/ (saved model)")
             logger.info("      ├── checkpoints/ (checkpoints)")
             logger.info("      └── config.yaml")
-        
+
         if len(all_combinations) > 3:
             logger.info(f"\n  ... and {len(all_combinations) - 3} more runs")
-    
+
     # ============================================================
     # 4. SHOW EXPECTED METRICS
     # ============================================================
@@ -260,7 +271,7 @@ def run_dry_run(
         logger.info("\n" + "=" * 80)
         logger.info("📈 EXPECTED METRICS")
         logger.info("=" * 80)
-        
+
         # Define expected metrics based on model size
         model_metrics = {
             "pico": {"iou": "~0.15-0.20", "loss": "~1.3-1.5"},
@@ -272,9 +283,11 @@ def run_dry_run(
             "efficient": {"iou": "~0.42-0.58", "loss": "~0.5-0.7"},
             "unet": {"iou": "~0.45-0.62", "loss": "~0.4-0.6"},
         }
-        
+
         for idx, (dataset, model, model_pair) in enumerate(all_combinations[:3], 1):
-            metrics = model_metrics.get(model, {"iou": "~0.20-0.40", "loss": "~0.8-1.2"})
+            metrics = model_metrics.get(
+                model, {"iou": "~0.20-0.40", "loss": "~0.8-1.2"}
+            )
             logger.info(f"\n  {idx}. {dataset} | {model}")
             logger.info("     Expected:")
             logger.info(f"     ├── train_loss: {metrics['loss']}")
@@ -285,10 +298,10 @@ def run_dry_run(
             logger.info("     ├── train_focal_loss: ~0.3-0.5")
             logger.info("     ├── train_dice_loss: ~0.2-0.4")
             logger.info("     └── train_loss_class_2: ~0.5-0.8 (most important)")
-        
+
         if len(all_combinations) > 3:
             logger.info(f"\n  ... and {len(all_combinations) - 3} more combinations")
-    
+
     # ============================================================
     # 5. SHOW EXPECTED OUTPUT
     # ============================================================
@@ -296,7 +309,7 @@ def run_dry_run(
         logger.info("\n" + "=" * 80)
         logger.info("📄 EXPECTED CONSOLE OUTPUT")
         logger.info("=" * 80)
-        
+
         logger.info("""
   For each combination, you'll see:
 
@@ -320,7 +333,7 @@ def run_dry_run(
   - Models: models/registry/{model}_{dataset}_best.pt
   - Logs: logs/YYYY-MM-DD/HH-MM-SS_*.log
         """)
-    
+
     # ============================================================
     # 6. SUMMARY
     # ============================================================
@@ -332,29 +345,27 @@ def run_dry_run(
     logger.info(f"  Total datasets: {len(datasets)}")
     logger.info(f"  Models to train: {len({m for _, m, _ in all_combinations})}")
     logger.info(f"  Datasets to train: {len({d for d, _, _ in all_combinations})}")
-    
+
     # Show which models are skipped
     skipped = []
     for model in {m for pair in model_pairs for m in pair}:
         for dataset in datasets:
             if model in SKIP_PER_DATASET.get(dataset, []):
                 skipped.append((model, dataset))
-    
+
     if skipped:
         logger.info("\n  ⚠️  Skipped combinations:")
         for model, dataset in skipped:
             logger.info(f"     - {model} on {dataset} (too large)")
-    
+
     logger.info("\n  💡 To run this, remove --dry-run flag")
     logger.info("=" * 80)
-
 
 
 @click.command()
 @click.option("--epochs", "-e", default=2, help="Number of epochs")
 @click.option("--device", "-d", default="mps", help="Device to use")
 @click.option("--dry-run", is_flag=True, help="Print commands without running")
-
 # ============================================================
 # NEW DRY RUN OPTIONS
 # ============================================================
@@ -362,13 +373,21 @@ def run_dry_run(
 @click.option("--show-functions", is_flag=True, help="Show function call stack")
 @click.option("--show-output", is_flag=True, help="Show expected output")
 @click.option("--show-metrics", is_flag=True, help="Show expected metrics")
-
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--no-log-memory", is_flag=True, help="Disable memory logging")
-
-def main(epochs, device, dry_run, show_mlflow, show_functions, show_output, show_metrics, verbose, no_log_memory):
+def main(
+    epochs,
+    device,
+    dry_run,
+    show_mlflow,
+    show_functions,
+    show_output,
+    show_metrics,
+    verbose,
+    no_log_memory,
+):
     """Run model pairs with graceful fallback."""
-    
+
     if dry_run:
         # Enhanced dry run
         run_dry_run(
@@ -383,7 +402,7 @@ def main(epochs, device, dry_run, show_mlflow, show_functions, show_output, show
             verbose=verbose,
         )
         return
-    
+
     # Normal run
     run_model_pairs_with_fallback(
         model_pairs=MODEL_PAIRS,

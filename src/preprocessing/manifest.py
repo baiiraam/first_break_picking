@@ -1,7 +1,3 @@
-"""
-Manifest generation for chunked datasets with checksums and versioning.
-"""
-
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -10,14 +6,33 @@ from typing import Any
 
 from loguru import logger
 
+# ✅ Larger buffer size for faster checksums
+CHECKSUM_BUFFER_SIZE = 65536  # 64KB (up from 4KB)
 
-def compute_checksum(filepath: Path) -> str:
-    """Compute SHA-256 checksum of a file."""
+
+def compute_checksum(filepath: Path, buffer_size: int = CHECKSUM_BUFFER_SIZE) -> str:
+    """
+    Compute SHA-256 checksum of a file with optimized buffer size.
+
+    Args:
+        filepath: Path to the file
+        buffer_size: Read buffer size in bytes (default: 64KB)
+    """
     sha256 = hashlib.sha256()
     with open(filepath, "rb") as f:
-        for block in iter(lambda: f.read(4096), b""):
+        for block in iter(lambda: f.read(buffer_size), b""):
             sha256.update(block)
     return sha256.hexdigest()[:16]
+
+
+def compute_checksum_from_bytes(data: bytes) -> str:
+    """Compute checksum from bytes data (no file I/O)."""
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def compute_checksum_from_string(json_str: str) -> str:
+    """Compute checksum from JSON string (no file I/O)."""
+    return hashlib.sha256(json_str.encode("utf-8")).hexdigest()[:16]
 
 
 def get_next_version(manifest_path: Path) -> str:
@@ -91,43 +106,24 @@ def generate_manifest(
     return manifest
 
 
-def save_manifest(manifest: dict[str, Any], path: Path):
-    """Save manifest to JSON file with checksum."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Save manifest without checksum first
-    with open(path, "w") as f:
-        json.dump(manifest, f, indent=2)
-
-    # Compute and update checksum
-    checksum = compute_checksum(path)
-    manifest["manifest_checksum"] = checksum
-
-    # Re-save with checksum
-    with open(path, "w") as f:
-        json.dump(manifest, f, indent=2)
-
-    logger.info(f"Manifest saved to {path} (checksum: {checksum})")
-
-
 def load_manifest(path: Path) -> dict[str, Any]:
-    """Load manifest from JSON file and verify checksum."""
+    """Load manifest from JSON file and verify checksum in-memory."""
     if not path.exists():
         raise FileNotFoundError(f"Manifest not found: {path}")
 
     with open(path, "r") as f:
         manifest = json.load(f)
 
-    # Verify manifest checksum if present
+    # ✅ Verify checksum in-memory (no temporary file)
     if manifest.get("manifest_checksum"):
         stored_checksum = manifest["manifest_checksum"]
-        # Remove checksum before computing
+
+        # Remove checksum from dict for computation
         manifest_copy = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
-        temp_path = path.with_suffix(".tmp")
-        with open(temp_path, "w") as f:
-            json.dump(manifest_copy, f, indent=2)
-        computed_checksum = compute_checksum(temp_path)
-        temp_path.unlink()
+
+        # ✅ Compute checksum from JSON string (no disk I/O)
+        json_str = json.dumps(manifest_copy, sort_keys=True, indent=2)
+        computed_checksum = compute_checksum_from_string(json_str)
 
         if stored_checksum != computed_checksum:
             logger.warning(
@@ -232,3 +228,64 @@ def get_manifest_stats(manifest: dict[str, Any]) -> dict[str, Any]:
         "total_size_gb": round(total_size_mb / 1024, 2),
         "split_stats": split_stats,
     }
+
+
+def validate_manifest_files(manifest: dict[str, Any], chunk_dir: Path) -> bool:
+    """
+    Validate that all chunk files in the manifest exist and are readable.
+    Returns True if all files exist, False otherwise.
+    """
+    all_exist = True
+    for chunk in manifest["chunks"]:
+        chunk_path = chunk_dir / chunk["filename"]
+        if not chunk_path.exists():
+            logger.error(f"Missing chunk file: {chunk_path}")
+            all_exist = False
+        elif chunk.get("file_size_mb", 0) == 0:
+            # File exists but size is 0 - recompute
+            logger.warning(f"File size is 0 for {chunk_path}, recomputing...")
+            chunk["file_size_mb"] = chunk_path.stat().st_size / (1024 * 1024)
+    return all_exist
+
+
+def save_manifest(
+    manifest: dict[str, Any],
+    path: Path,
+    validate_files: bool = False,  # ✅ Default to False
+    force_validate: bool = False,  # ✅ Optional explicit validation
+):
+    """
+    Save manifest to JSON file with checksum and optional file validation.
+
+    Args:
+        manifest: Manifest dictionary
+        path: Path to save manifest
+        validate_files: If True, validate chunk files exist before saving
+        force_validate: If True, raise error on missing files instead of warning
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Validate files exist if requested
+    if validate_files:
+        chunk_dir = path.parent
+        if not validate_manifest_files(manifest, chunk_dir):
+            if force_validate:
+                raise RuntimeError(f"Missing chunk files for manifest at {path}")
+            else:
+                logger.warning("Some chunk files are missing or have 0 size")
+
+    # Save manifest without checksum first
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    # Compute checksum in-memory
+    manifest_copy = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
+    json_str = json.dumps(manifest_copy, sort_keys=True, indent=2)
+    checksum = compute_checksum_from_string(json_str)
+    manifest["manifest_checksum"] = checksum
+
+    # Re-save with checksum
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    logger.info(f"Manifest saved to {path} (checksum: {checksum})")
