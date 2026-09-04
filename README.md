@@ -1,3 +1,5 @@
+# !NEEDS UPDATE
+
 # Deep Dive: Complete Documentation of `configs/`, `src/`, and `scripts/` Folders
 
 ---
@@ -450,7 +452,7 @@ class LRUCache:
         self.max_size = max_size
         self.hits = 0
         self.misses = 0
-    
+
     def get(self, key: int) -> Optional[Dict]:
         """Retrieve item, moves to end (most recent)."""
         if key not in self.cache:
@@ -459,31 +461,31 @@ class LRUCache:
         self.hits += 1
         self.cache.move_to_end(key)
         return self.cache[key]
-    
+
     def put(self, key: int, value: Dict):
         """Store item, evicts oldest if full."""
         if key in self.cache:
             self.cache.move_to_end(key)
             self.cache[key] = value
             return
-        
+
         if len(self.cache) >= self.max_size:
             oldest_key = next(iter(self.cache))
             self._evict(oldest_key)
-        
+
         self.cache[key] = value
-    
+
     def get_stats(self) -> Dict:
         """Get cache statistics (hit rate, size, etc.)."""
         total = self.hits + self.misses
         hit_rate = self.hits / total if total > 0 else 0
         return {
-            'size': len(self.cache),
-            'max_size': self.max_size,
-            'hits': self.hits,
-            'misses': self.misses,
-            'hit_rate': hit_rate,
-            'active_keys': list(self.cache.keys())
+            "size": len(self.cache),
+            "max_size": self.max_size,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": hit_rate,
+            "active_keys": list(self.cache.keys()),
         }
 ```
 
@@ -496,31 +498,31 @@ class ChunkedSeismicDataset(Dataset):
         self.manifest = manifest
         self.split = split
         self.cache = LRUCache(max_size=cache_size)
-        
+
         # Build global index: sample_idx → (chunk_idx, local_idx)
         self.global_index = []
         self.chunk_indices = []
         self.chunk_offsets = []
         self.shot_ids = []
-        
+
         for chunk_idx, chunk in enumerate(self.chunks):
-            for local_idx in range(chunk['n_shots']):
+            for local_idx in range(chunk["n_shots"]):
                 self.global_index.append(offset + local_idx)
                 self.chunk_indices.append(chunk_idx)
                 self.chunk_offsets.append(local_idx)
-                self.shot_ids.append(chunk['shot_ids'][local_idx])
-    
+                self.shot_ids.append(chunk["shot_ids"][local_idx])
+
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         chunk_idx = self.chunk_indices[idx]
         local_idx = self.chunk_offsets[idx]
-        
+
         if chunk_idx not in self.cache:
             self._load_chunk(chunk_idx)
-        
+
         cached_item = self.cache.get(chunk_idx)
-        data = cached_item['data'][local_idx]
-        mask = cached_item['mask'][local_idx]
-        
+        data = cached_item["data"][local_idx]
+        mask = cached_item["mask"][local_idx]
+
         return data.unsqueeze(0).contiguous(), mask.contiguous()
 ```
 
@@ -646,23 +648,23 @@ class ShotProcessor:
 def create_loss_function(config) -> nn.Module:
     loss_type = getattr(config, "loss_function", "cross_entropy")
     class_weights = getattr(config, "class_weights", [0.2, 0.2, 0.6])
-    
+
     if loss_type == "cross_entropy":
         return nn.CrossEntropyLoss(weight=torch.tensor(class_weights))
-    
+
     elif loss_type == "focal":
         return FocalLoss(alpha=class_weights, gamma=config.focal_gamma)
-    
+
     elif loss_type == "dice":
         return DiceLoss(num_classes=len(class_weights))
-    
+
     elif loss_type == "combo":
         return ComboLoss(
             class_weights=class_weights,
             dice_weight=config.dice_weight,
-            focal_gamma=config.focal_gamma
+            focal_gamma=config.focal_gamma,
         )
-    
+
     else:
         raise ValueError(f"Unknown loss function: {loss_type}")
 ```
@@ -675,51 +677,61 @@ class SeismicTrainer:
         """Main training loop."""
         # 1. Warmup MPS shaders (Apple Silicon)
         self._warmup_mps()
-        
+
         # 2. Main epoch loop
         for epoch in range(self.config.n_epochs):
             # Train
             train_loss, train_metrics = self.train_epoch()
-            
+
             # Validate
             val_loss, val_metrics = self.validate()
-            
+
             # Update scheduler
             self.scheduler.step(val_loss)
-            
+
             # Log metrics
-            self._log_epoch_metrics(epoch, train_loss, train_metrics, val_loss, val_metrics)
-            
+            self._log_epoch_metrics(
+                epoch, train_loss, train_metrics, val_loss, val_metrics
+            )
+
             # Checkpoint
             self._log_model_checkpoint(epoch, train_loss, val_loss, val_metrics)
-            
+
             # Early stopping
             if self._check_early_stopping(val_loss):
                 break
-        
+
         # 3. Update model aliases (champion/challenger/staging)
         self._update_model_aliases(best_val_loss)
-        
+
         # 4. Finalize
         self.writer.close()
         self.mlflow_manager.end_run()
-    
+
     def _update_model_aliases(self, best_val_loss):
         """Promote champion/challenger/staging aliases."""
         champion = self.mlflow_manager.get_model_by_alias(registered_name, "champion")
-        
+
         if champion:
             if current_val_loss < champion_val_loss:
                 # New model is better → champion
-                self.mlflow_manager.set_model_alias(registered_name, "champion", current_version)
-                self.mlflow_manager.set_model_alias(registered_name, "challenger", champion.version)
+                self.mlflow_manager.set_model_alias(
+                    registered_name, "champion", current_version
+                )
+                self.mlflow_manager.set_model_alias(
+                    registered_name, "challenger", champion.version
+                )
             else:
                 # New model is worse → challenger
-                self.mlflow_manager.set_model_alias(registered_name, "challenger", current_version)
+                self.mlflow_manager.set_model_alias(
+                    registered_name, "challenger", current_version
+                )
         else:
             # No champion yet → first model is champion
-            self.mlflow_manager.set_model_alias(registered_name, "champion", current_version)
-        
+            self.mlflow_manager.set_model_alias(
+                registered_name, "champion", current_version
+            )
+
         # Always set staging to latest
         self.mlflow_manager.set_model_alias(registered_name, "staging", current_version)
 ```

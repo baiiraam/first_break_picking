@@ -112,10 +112,8 @@ class SweepExperiment:
             
             # Log artifacts
             if self.mlflow_manager:
-                # Log config
                 self.mlflow_manager.log_artifact("configs/batch_config.yaml", artifact_path="configs")
                 
-                # Check if model was saved
                 model_path = Path(f"models/registry/*{model}_{dataset}*.pt")
                 if list(model_path.parent.glob(f"*{model}_{dataset}*.pt")):
                     self.mlflow_manager.log_artifact(str(model_path), artifact_path="models")
@@ -152,7 +150,7 @@ class SweepExperiment:
                 "error": "Timeout",
                 "metrics": {},
             }
-        except Exception as e: # noqa BLE001
+        except Exception as e:
             logger.error(f"   ❌ ERROR: {e}")
             return {
                 "success": False,
@@ -200,9 +198,9 @@ class SweepExperiment:
             cmd.append("--log-memory")
         
         return cmd
-    
-    # In scripts/sweep_mlflow.py, replace the parse_metrics function:
 
+    # ✅ Fixed: Added @staticmethod decorator
+    @staticmethod
     def parse_metrics(output: str) -> dict:
         """Parse metrics from training output."""
         metrics = {}
@@ -211,39 +209,38 @@ class SweepExperiment:
             if "Train Loss:" in line:
                 try:
                     metrics["train_loss"] = float(line.split("Train Loss:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse train_loss from: {line[:50]}... Error: {e}")
-                    # Keep default value
+                except (IndexError, ValueError):
+                    pass
             
             if "Val Loss:" in line:
                 try:
                     metrics["val_loss"] = float(line.split("Val Loss:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse val_loss from: {line[:50]}... Error: {e}")
+                except (IndexError, ValueError):
+                    pass
             
             if "Train IoU:" in line:
                 try:
                     metrics["train_iou"] = float(line.split("Train IoU:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse train_iou from: {line[:50]}... Error: {e}")
+                except (IndexError, ValueError):
+                    pass
             
             if "Val IoU:" in line:
                 try:
                     metrics["val_iou"] = float(line.split("Val IoU:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse val_iou from: {line[:50]}... Error: {e}")
+                except (IndexError, ValueError):
+                    pass
             
             if "Train Acc:" in line:
                 try:
                     metrics["train_acc"] = float(line.split("Train Acc:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse train_acc from: {line[:50]}... Error: {e}")
+                except (IndexError, ValueError):
+                    pass
             
             if "Val Acc:" in line:
                 try:
                     metrics["val_acc"] = float(line.split("Val Acc:")[1].split()[0])
-                except (IndexError, ValueError) as e:
-                    logger.debug(f"Could not parse val_acc from: {line[:50]}... Error: {e}")
+                except (IndexError, ValueError):
+                    pass
         
         return metrics
     
@@ -332,7 +329,6 @@ class SweepExperiment:
         logger.info(f"Failed: {len(failed)}")
         
         if successful:
-            # Best by val IoU
             best = max(successful, key=lambda x: x.get("metrics", {}).get("val_iou", 0))
             logger.info("\n🏆 Best Experiment:")
             logger.info(f"  Dataset: {best['dataset']}")
@@ -363,3 +359,4 @@ def main(config: str):
 
 if __name__ == "__main__":
     main()
+    

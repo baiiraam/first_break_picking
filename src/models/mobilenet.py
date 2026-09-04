@@ -14,7 +14,11 @@ class MobileUNet(nn.Module):
     """
 
     def __init__(
-        self, in_channels: int = 1, out_channels: int = 3, pretrained: bool = True
+        self,
+        in_channels: int = 1,
+        out_channels: int = 3,
+        pretrained: bool = True,
+        freeze_encoder: bool = True,  # ✅ NEW: Default to frozen (original behavior)
     ):
         super().__init__()
 
@@ -25,16 +29,17 @@ class MobileUNet(nn.Module):
         else:
             self.encoder = mobilenet_v2(weights=None)
 
-        # Freeze encoder weights (optional)
-        for param in self.encoder.parameters():
-            param.requires_grad = False
-        print("🔒 MobileNet encoder frozen")
+        # ✅ Remove redundant stem - use MobileNet's built-in conv
+        self._adapt_first_conv(in_channels)
 
-        # Expand input to 3 channels
-        self.stem = nn.Conv2d(in_channels, 3, kernel_size=3, padding=1)
+        # ✅ Freeze encoder if requested
+        if freeze_encoder:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
+            self.encoder.eval()
+            print("🔒 MobileNet encoder frozen")
 
         # MobileNetV2 features
-        # MaxPool2d(2) silindi, çünki features[0:2] onsuz da stride=2 istifadə edir.
         self.enc1 = self.encoder.features[0:2]  # 16 channels
         self.enc2 = self.encoder.features[2:4]  # 24 channels
         self.enc3 = self.encoder.features[4:7]  # 32 channels
@@ -50,6 +55,40 @@ class MobileUNet(nn.Module):
 
         self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
 
+    def _adapt_first_conv(self, in_channels: int):
+        """
+        Adapt the first convolution layer to accept arbitrary input channels.
+        """
+        # Get the first convolution layer from features[0]
+        first_conv = self.encoder.features[0][0]  # First layer is Conv2d
+
+        if in_channels != first_conv.in_channels:
+            # Create new conv with same parameters but adjusted input channels
+            new_conv = nn.Conv2d(
+                in_channels,
+                first_conv.out_channels,
+                kernel_size=first_conv.kernel_size,
+                stride=first_conv.stride,
+                padding=first_conv.padding,
+                bias=first_conv.bias is not None,
+            )
+
+            # Initialize weights (average the original weights if possible)
+            if in_channels == 1:
+                # Average RGB weights to grayscale
+                with torch.no_grad():
+                    new_conv.weight.data = first_conv.weight.data.mean(
+                        dim=1, keepdim=True
+                    )
+            else:
+                # For other channel counts, use normal initialization
+                nn.init.kaiming_normal_(
+                    new_conv.weight, mode="fan_out", nonlinearity="relu"
+                )
+
+            # Replace the first conv
+            self.encoder.features[0][0] = new_conv
+
     def _decoder_block(self, in_channels, out_channels):
         return nn.Sequential(
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
@@ -60,7 +99,7 @@ class MobileUNet(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, _, h, w = x.shape
 
         # Pad to ensure divisibility by 32
@@ -73,8 +112,6 @@ class MobileUNet(nn.Module):
             x = F.pad(x, (0, pad_w, 0, pad_h))
 
         # Encoder
-        x = self.stem(x)
-
         e1 = self.enc1(x)  # 16 channels
         e2 = self.enc2(e1)  # 24 channels
         e3 = self.enc3(e2)  # 32 channels
@@ -110,7 +147,7 @@ class MobileUNet(nn.Module):
 
         out = self.out_conv(d1)
 
-        # Crop back to original input dimensions
+        # Crop back
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
 

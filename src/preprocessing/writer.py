@@ -1,5 +1,5 @@
 """
-Chunk writing logic for preprocessing pipeline with checksums and validation.
+Chunk writing logic for preprocessing pipeline with optimized checksums.
 """
 
 import hashlib
@@ -12,10 +12,13 @@ import torch
 from loguru import logger
 from tqdm import tqdm
 
+# ✅ Use consistent buffer size
+CHECKSUM_BUFFER_SIZE = 65536  # 64KB
+
 
 class ChunkWriter:
     """
-    Writes processed chunks to disk with checksums and validation.
+    Writes processed chunks to disk with optimized checksums.
     """
 
     def __init__(self, chunk_dir: Path, compute_checksums: bool = True):
@@ -23,11 +26,13 @@ class ChunkWriter:
         self.chunk_dir.mkdir(parents=True, exist_ok=True)
         self.compute_checksums = compute_checksums
 
-    def compute_checksum(self, filepath: Path) -> str:
-        """Compute SHA-256 checksum of a file."""
+    def compute_checksum(
+        self, filepath: Path, buffer_size: int = CHECKSUM_BUFFER_SIZE
+    ) -> str:
+        """Compute SHA-256 checksum with optimized buffer size."""
         sha256 = hashlib.sha256()
         with open(filepath, "rb") as f:
-            for block in iter(lambda: f.read(4096), b""):
+            for block in iter(lambda: f.read(buffer_size), b""):
                 sha256.update(block)
         return sha256.hexdigest()[:16]
 
@@ -42,22 +47,11 @@ class ChunkWriter:
     ) -> Path:
         """
         Write a chunk to disk with checksum.
-
-        Args:
-            data_batch: (n_shots, target_traces, n_samples) float32
-            mask_batch: (n_shots, target_traces, n_samples) int64
-            shot_ids: List of shot IDs
-            chunk_id: Chunk identifier
-            split: 'train', 'val', or 'test'
-            metadata: Additional metadata to save
-
-        Returns:
-            Path to saved chunk file
         """
         filename = f"chunk_{chunk_id:03d}_{split}.pt"
         filepath = self.chunk_dir / filename
 
-        # Convert metadata to tensors for weights_only=True compatibility
+        # Convert metadata to tensors
         chunk_data = {
             "data": torch.tensor(data_batch, dtype=torch.float32),
             "mask": torch.tensor(mask_batch, dtype=torch.long),
@@ -72,24 +66,20 @@ class ChunkWriter:
         }
 
         if metadata:
-            # Add metadata as tensors
             for key, value in metadata.items():
                 if isinstance(value, (int, float, str, bool)):
-                    # Convert to tensor
                     chunk_data[f"meta_{key}"] = torch.tensor([value])
                 elif isinstance(value, list):
                     chunk_data[f"meta_{key}"] = torch.tensor(value)
                 else:
-                    # Store as pickle for complex objects
                     chunk_data[f"meta_{key}"] = value
 
         # Save with high protocol for efficiency
-        torch.save(chunk_data, filepath, pickle_protocol=4)
+        torch.save(chunk_data, filepath)
 
         # Compute checksum if enabled
         if self.compute_checksums:
             checksum = self.compute_checksum(filepath)
-            # Save checksum separately
             checksum_path = filepath.with_suffix(".checksum")
             with open(checksum_path, "w") as f:
                 f.write(checksum)
@@ -104,13 +94,17 @@ class ChunkWriter:
     def verify_chunk(self, filepath: Path) -> bool:
         """
         Verify a chunk file is valid and loadable.
-
-        Returns:
-            True if valid, False otherwise
         """
         try:
-            # Try loading with weights_only=True (safer)
-            chunk = torch.load(filepath, map_location="cpu", weights_only=True)
+            # Try weights_only=True first (safer)
+            try:
+                chunk = torch.load(filepath, map_location="cpu", weights_only=True)
+            except Exception as e:
+                # Fallback for backward compatibility with older checkpoints
+                logger.debug(
+                    f"weights_only=True failed, trying with weights_only=False: {e}"
+                )
+                chunk = torch.load(filepath, map_location="cpu", weights_only=False)
 
             required_keys = [
                 "data",
@@ -145,7 +139,7 @@ class ChunkWriter:
                         return False
 
             return True
-        except Exception as e: # noqa: BLE001
+        except Exception as e:
             logger.error(f"Error verifying {filepath}: {e}")
             return False
 

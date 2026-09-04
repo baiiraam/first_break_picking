@@ -2,50 +2,62 @@
 Evaluation metrics for seismic FBP.
 """
 
-
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 
 class SegmentationMetrics:
     """
     Segmentation metrics for U-Net predictions.
+    Accumulates metrics on GPU to avoid CPU-GPU synchronization.
     """
 
-    def __init__(self, num_classes: int = 3, ignore_index: int = -1):
+    def __init__(self, num_classes: int = 3, ignore_index: int = -1, device: torch.device = None):
         self.num_classes = num_classes
         self.ignore_index = ignore_index
+        self.device = device if device is not None else torch.device("cpu")
         self.reset()
 
     def reset(self):
-        """Reset accumulated metrics."""
-        self.confusion_matrix = np.zeros(
-            (self.num_classes, self.num_classes), dtype=np.int64
+        """Reset accumulated metrics on device."""
+        self.confusion_matrix = torch.zeros(
+            (self.num_classes, self.num_classes), dtype=torch.int64, device=self.device
         )
         self.total_pixels = 0
 
     def update(self, predictions: torch.Tensor, targets: torch.Tensor):
-        """Update confusion matrix with batch."""
-        pred = predictions.cpu().numpy().flatten()
-        target = targets.cpu().numpy().flatten()
+        """
+        Update confusion matrix with batch using device tensors.
+        No CPU synchronization until compute() is called.
+        """
+        preds = predictions.detach().flatten()
+        targets = targets.detach().flatten()
 
-        # Filter ignored indices
         if self.ignore_index >= 0:
-            mask = target != self.ignore_index
-            pred = pred[mask]
-            target = target[mask]
+            mask = targets != self.ignore_index
+            preds = preds[mask]
+            targets = targets[mask]
 
-        # Update confusion matrix
-        for i, (p, t) in enumerate(zip(pred, target)):
-            if 0 <= p < self.num_classes and 0 <= t < self.num_classes:
-                self.confusion_matrix[t, p] += 1
-            self.total_pixels += 1
+        valid_mask = (
+            (preds >= 0)
+            & (preds < self.num_classes)
+            & (targets >= 0)
+            & (targets < self.num_classes)
+        )
+        valid_pred = preds[valid_mask]
+        valid_target = targets[valid_mask]
+
+        if len(valid_pred) > 0:
+            indices = self.num_classes * valid_target + valid_pred
+            counts = torch.bincount(indices, minlength=self.num_classes ** 2)
+            self.confusion_matrix += counts.reshape(self.num_classes, self.num_classes)
+
+        self.total_pixels += len(preds)
 
     def compute(self) -> dict[str, float]:
-        """Compute all metrics."""
-        cm = self.confusion_matrix
+        """Compute all metrics (moves to CPU once per epoch)."""
+        cm = self.confusion_matrix.cpu().numpy()
 
         # Pixel accuracy
         accuracy = np.trace(cm) / np.sum(cm) if np.sum(cm) > 0 else 0
@@ -61,20 +73,16 @@ class SegmentationMetrics:
             fp = np.sum(cm[:, c]) - tp
             fn = np.sum(cm[c, :]) - tp
 
-            # IoU
             denominator = tp + fp + fn
             iou = tp / denominator if denominator > 0 else 0
             iou_per_class.append(iou)
 
-            # Precision
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0
             precision_per_class.append(precision)
 
-            # Recall
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0
             recall_per_class.append(recall)
 
-            # F1
             f1 = (
                 2 * precision * recall / (precision + recall)
                 if (precision + recall) > 0
@@ -82,16 +90,10 @@ class SegmentationMetrics:
             )
             f1_per_class.append(f1)
 
-        # Mean IoU
-        mean_iou = np.mean(iou_per_class)
-
-        # Mean F1
-        mean_f1 = np.mean(f1_per_class)
-
         return {
             "accuracy": float(accuracy),
-            "mean_iou": float(mean_iou),
-            "mean_f1": float(mean_f1),
+            "mean_iou": float(np.mean(iou_per_class)),
+            "mean_f1": float(np.mean(f1_per_class)),
             "iou_per_class": [float(x) for x in iou_per_class],
             "precision_per_class": [float(x) for x in precision_per_class],
             "recall_per_class": [float(x) for x in recall_per_class],
@@ -189,36 +191,6 @@ def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:
             if p.grad is not None:
                 norms[f"grads_{name}"] = p.grad.data.norm(2).item()
     return norms
-
-
-class ComboLoss(nn.Module):
-    def __init__(self, class_weights, dice_weight=0.5, focal_gamma=2.0):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss(weight=torch.tensor(class_weights))
-        self.dice_weight = dice_weight
-        self.gamma = focal_gamma
-
-    def forward(self, logits, target):
-        # CE
-        ce_loss = self.ce(logits, target)
-
-        # Focal
-        probs = F.softmax(logits, dim=1)
-        focal = (1 - probs) ** self.gamma * -torch.log(probs + 1e-7)
-        focal_loss = focal.gather(1, target.unsqueeze(1)).mean()
-
-        # Dice
-        target_oh = F.one_hot(target, probs.shape[1]).permute(0, 3, 1, 2).float()
-        dims = (0, 2, 3)
-        intersection = (probs * target_oh).sum(dims)
-        dice = (2 * intersection + 1e-6) / (
-            probs.sum(dims) + target_oh.sum(dims) + 1e-6
-        )
-        dice_loss = 1 - dice.mean()
-
-        return (1 - self.dice_weight) * (
-            0.5 * ce_loss + 0.5 * focal_loss
-        ) + self.dice_weight * dice_loss
 
 
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
