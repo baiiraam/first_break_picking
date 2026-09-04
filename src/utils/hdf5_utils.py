@@ -189,3 +189,9 @@ def load_shot_data(
     """Load a single shot's data and picks from HDF5 (legacy function)."""
     with HDF5SeismicReader(hdf5_path) as reader:
         return reader.load_shot_data(start_idx, end_idx, target_traces, n_samples)
+
+def validate_hdf5(hdf5_path: str) -> bool:
+    """Validate HDF5 file structure (convenience function)."""
+    with HDF5SeismicReader(hdf5_path) as reader:
+        return reader.validate_hdf5()
+

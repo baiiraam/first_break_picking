@@ -7,10 +7,9 @@ Tests: chunker ID uniqueness, cache thread safety, model imports, config immutab
 import os
 import sys
 import threading
-from pathlib import Path
 
-import torch
 import numpy as np
+import torch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -108,16 +107,16 @@ def test_model_imports():
     
     try:
         from src.models import (
-            UNet,
-            MPSLightUNet,
+            EfficientUNet,
             LightUNet,
+            MobileUNet,
+            MPSLightUNet,
             NanoUNet,
             NanoUNetLight,
             PicoUNet,
             TinyUNet,
-            MobileUNet,
-            EfficientUNet,
             UltraNanoUNet,
+            UNet,
             create_model,
             list_models,
         )
@@ -211,7 +210,7 @@ def test_gpu_metrics():
         targets = torch.randint(0, 3, (batch_size, 1578, 751))
         
         metrics.update(preds, targets)
-        print(f"   ✅ Updated metrics with batch")
+        print("   ✅ Updated metrics with batch")
         
         results = metrics.compute()
         print(f"   ✅ Computed metrics: accuracy={results['accuracy']:.4f}, mean_iou={results['mean_iou']:.4f}")
@@ -236,7 +235,7 @@ def test_sweep_parse_metrics():
         if hasattr(SweepExperiment, 'parse_metrics'):
             # Try calling it as a static method
             result = SweepExperiment.parse_metrics("Train Loss: 0.1234\nVal Loss: 0.2345")
-            print(f"✅ parse_metrics is accessible as static method")
+            print("✅ parse_metrics is accessible as static method")
             print(f"   Parsed: {result}")
             return True
         else:
@@ -255,6 +254,7 @@ def test_predict_loader():
     try:
         # Check if predict.py imports load_model_from_checkpoint
         import inspect
+
         import scripts.predict as predict_module
         
         source = inspect.getsource(predict_module)

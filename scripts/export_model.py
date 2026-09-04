@@ -15,7 +15,6 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
-from src.models.factory import create_model
 from src.models.loader import load_model_from_checkpoint  # ✅ NEW
 from src.utils.logger import create_task_name, setup_logger
 
@@ -75,7 +74,7 @@ def main(
     # Load model based on type
     device_obj = torch.device(device)
 
-    logger.info(f"\nLoading model...")
+    logger.info("\nLoading model...")
 
     # ✅ Use unified loader
     try:
@@ -169,4 +168,3 @@ def main(
 
 if __name__ == "__main__":
     main()
-    

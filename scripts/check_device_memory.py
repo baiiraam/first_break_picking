@@ -8,7 +8,6 @@ import json
 import os
 import platform
 import sys
-from dataclasses import dataclass
 from typing import Any
 
 import psutil
@@ -18,7 +17,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.utils.logger import setup_logger
-from src.utils.memory import MODEL_PROFILES, check_memory_usage
+from src.utils.memory import MODEL_PROFILES
 
 logger = setup_logger(task_name="check_device_memory")
 

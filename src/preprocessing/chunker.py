@@ -1,5 +1,6 @@
-import numpy as np
 from typing import Any
+
+import numpy as np
 from loguru import logger
 
 
@@ -70,4 +71,3 @@ class Chunker:
         """Allow reseeding the RNG if needed."""
         self.random_seed = new_seed
         self.rng = np.random.default_rng(new_seed)
-        

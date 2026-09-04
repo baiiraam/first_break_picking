@@ -12,7 +12,6 @@ import torch
 import yaml
 
 from src.config import SeismicConfig
-from src.models.factory import create_model
 from src.models.loader import load_model_from_checkpoint  # ✅ NEW
 from src.training.metrics import extract_picks_from_mask
 from src.utils.logger import setup_logger
@@ -107,4 +106,3 @@ def main(model, input, output, config, device, batch_size, chunk_size, model_typ
 
 if __name__ == "__main__":
     main()
-    
