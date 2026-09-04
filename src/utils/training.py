@@ -3,13 +3,13 @@ Training utilities including OOM recovery.
 """
 
 from contextlib import contextmanager
+
 import torch
 from loguru import logger
 
 
 class MemoryError(Exception):
     """Recoverable memory error."""
-    pass
 
 
 @contextmanager

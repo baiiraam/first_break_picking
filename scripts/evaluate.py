@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.factory import create_model
 from src.models.loader import load_model_from_checkpoint  # ✅ NEW
 from src.preprocessing.manifest import load_manifest
 from src.training.metrics import (
@@ -32,6 +31,7 @@ from src.training.metrics import (
 )
 from src.utils.logger import create_task_name, setup_logger
 from src.utils.mlflow_utils import format_registered_model_name, get_mlflow_manager
+
 
 @click.command()
 @click.option("--config", "-c", required=True, help="Path to config YAML file")

@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-import psutil
 import torch
 import yaml
 
@@ -22,18 +21,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Import the training function
 from scripts.train import run_training_session
 from src.config import SeismicConfig
-from src.training.exceptions import ModelOutOfMemoryError
-from src.training.types import BatchVariant, ModelProfile, TrainingResult
+from src.training.types import BatchVariant, TrainingResult
 from src.utils.logger import setup_logger
-
 from src.utils.memory import (
     MODEL_PROFILES,
     check_memory_usage,
     clear_memory,
     get_available_memory_gb,
 )
-
-from src.utils.training import memory_recovery_guard, MemoryError
+from src.utils.training import MemoryError, memory_recovery_guard
 
 # ============================================================
 # DATASET CONFIGURATIONS
