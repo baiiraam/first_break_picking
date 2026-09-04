@@ -106,4 +106,3 @@ def main(model, input, output, config, device, batch_size, chunk_size, model_typ
 
 if __name__ == "__main__":
     main()
-    

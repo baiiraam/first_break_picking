@@ -300,4 +300,3 @@ def get_memory_manager() -> MemoryManager:
     if _global_memory_manager is None:
         _global_memory_manager = MemoryManager()
     return _global_memory_manager
-    

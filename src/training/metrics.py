@@ -10,7 +10,7 @@ from torch import nn
 class SegmentationMetrics:
     """
     Segmentation metrics for U-Net predictions.
-    Accumulates metrics on GPU to avoid CPU-GPU synchronization.
+    Accumulates metrics on device to avoid CPU-GPU synchronization.
     """
 
     def __init__(self, num_classes: int = 3, ignore_index: int = -1, device: torch.device = None):
@@ -31,6 +31,10 @@ class SegmentationMetrics:
         Update confusion matrix with batch using device tensors.
         No CPU synchronization until compute() is called.
         """
+        # ✅ Ensure tensors are on the same device as the confusion matrix
+        predictions = predictions.to(self.device)
+        targets = targets.to(self.device)
+        
         preds = predictions.detach().flatten()
         targets = targets.detach().flatten()
 
@@ -59,10 +63,8 @@ class SegmentationMetrics:
         """Compute all metrics (moves to CPU once per epoch)."""
         cm = self.confusion_matrix.cpu().numpy()
 
-        # Pixel accuracy
         accuracy = np.trace(cm) / np.sum(cm) if np.sum(cm) > 0 else 0
 
-        # Per-class metrics
         iou_per_class = []
         precision_per_class = []
         recall_per_class = []
@@ -102,28 +104,16 @@ class SegmentationMetrics:
 
 
 class FirstBreakMetrics:
-    """
-    Metrics for first break picking accuracy.
-    """
-
     def __init__(self, tolerance_samples: int = 3):
         self.tolerance_samples = tolerance_samples
         self.reset()
 
     def reset(self):
-        """Reset accumulated metrics."""
         self.errors = []
         self.within_tolerance = []
         self.total_traces = 0
 
     def update(self, predicted_picks: np.ndarray, true_picks: np.ndarray):
-        """
-        Update metrics with batch.
-
-        Args:
-            predicted_picks: (n_traces,) array of predicted pick positions in samples
-            true_picks: (n_traces,) array of ground truth pick positions in samples
-        """
         valid_mask = (true_picks > 0) & (predicted_picks > 0)
         pred = predicted_picks[valid_mask]
         true = true_picks[valid_mask]
@@ -137,7 +127,6 @@ class FirstBreakMetrics:
         self.total_traces += len(pred)
 
     def compute(self) -> dict[str, float]:
-        """Compute all metrics."""
         if len(self.errors) == 0:
             return {
                 "mean_absolute_error": 0.0,
@@ -164,7 +153,6 @@ class FirstBreakMetrics:
 
 
 def compute_gradient_norm(model: nn.Module) -> float:
-    """Compute the total gradient norm of all parameters."""
     total_norm = 0.0
     for p in model.parameters():
         if p.grad is not None:
@@ -174,7 +162,6 @@ def compute_gradient_norm(model: nn.Module) -> float:
 
 
 def compute_weight_norm(model: nn.Module) -> float:
-    """Compute the total weight norm of all parameters."""
     total_norm = 0.0
     for p in model.parameters():
         param_norm = p.data.norm(2)
@@ -183,7 +170,6 @@ def compute_weight_norm(model: nn.Module) -> float:
 
 
 def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:
-    """Compute weight and gradient norms per layer."""
     norms = {}
     for name, p in model.named_parameters():
         if p.requires_grad:
@@ -194,28 +180,16 @@ def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:
 
 
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
-    """
-    Extract first break picks from segmentation mask.
-
-    Args:
-        mask: (n_traces, n_samples) segmentation mask (classes 0, 1, 2)
-
-    Returns:
-        picks: (n_traces,) pick positions in samples
-    """
     n_traces = mask.shape[0]
     picks = np.zeros(n_traces, dtype=np.int64)
 
     for i in range(n_traces):
-        # Find first occurrence of class 2 (strip) or class 1 (after)
         strip_indices = np.where(mask[i] == 2)[0]
         after_indices = np.where(mask[i] == 1)[0]
 
         if len(strip_indices) > 0:
-            # Pick is the center of the strip
             picks[i] = int(np.median(strip_indices))
         elif len(after_indices) > 0:
-            # Pick is the first after pixel minus strip_width/2
             picks[i] = after_indices[0] - 4
         else:
             picks[i] = 0

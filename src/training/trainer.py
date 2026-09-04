@@ -252,7 +252,7 @@ class SeismicTrainer:
         """
         self.model.train()
         total_loss = 0.0
-        seg_metrics = SegmentationMetrics(num_classes=3)
+        seg_metrics = SegmentationMetrics(num_classes=3, device=self.device)
 
         if self.device.type == "mps":
             torch.mps.empty_cache()
@@ -330,7 +330,7 @@ class SeismicTrainer:
         """
         self.model.eval()
         total_loss = 0.0
-        seg_metrics = SegmentationMetrics(num_classes=3)
+        seg_metrics = SegmentationMetrics(num_classes=3, device=self.device)
 
         if self.device.type == "mps":
             torch.mps.empty_cache()
