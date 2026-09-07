@@ -16,24 +16,53 @@ class ShotProcessor:
         n_samples: int = 751,
         strip_width: int = 8,
         log_level: str = "INFO",
+        ignore_index: int = -1,  # 🆕 Add parameter
+        sampling_interval_ms: float = None,  # 🆕 Add parameter
     ):
         self.target_traces = target_traces
         self.n_samples = n_samples
         self.strip_width = strip_width
         self.half_width = strip_width // 2
         self.log_level = log_level
+        self.ignore_index = ignore_index
         self.stats = []
+        
+        # 🆕 Auto-detect sampling interval if not provided
+        if sampling_interval_ms is None:
+            # Auto-detect based on n_samples (common datasets)
+            if n_samples == 751:
+                # Halfmile or Brunswick (1500ms recording)
+                self.sampling_interval_ms = 1500.0 / n_samples  # ~2.0ms
+            elif n_samples == 1501:
+                # Lalor (1500ms recording)
+                self.sampling_interval_ms = 1500.0 / n_samples  # ~1.0ms
+            elif n_samples == 1001:
+                # Sudbury (1000ms recording)
+                self.sampling_interval_ms = 1000.0 / n_samples  # ~1.0ms
+            else:
+                # Default: assume 2ms per sample
+                self.sampling_interval_ms = 2.0
+        else:
+            self.sampling_interval_ms = sampling_interval_ms
 
     def validate_picks(self, picks: np.ndarray) -> tuple[np.ndarray, dict]:
         """
         Validate and clean picks.
-
-        Returns:
-            cleaned_picks: Picks with invalid values clipped
-            stats: Dictionary of validation statistics
+        CONVERTS MILLISECONDS TO SAMPLES!
         """
         total = len(picks)
-        valid_mask = (picks > 0) & (picks < self.n_samples)
+        
+        # 🆕 CONVERT FROM MILLISECONDS TO SAMPLES
+        picks_samples = picks / self.sampling_interval_ms
+        
+        # Round to nearest sample
+        picks_samples = np.round(picks_samples).astype(np.float32)
+        
+        # Clip to valid range [0, n_samples-1]
+        picks_samples = np.clip(picks_samples, 0, self.n_samples - 1)
+        
+        # Count valid picks (between 0 and n_samples-1)
+        valid_mask = (picks_samples > 0) & (picks_samples < self.n_samples)
         valid_count = np.sum(valid_mask)
         invalid_count = total - valid_count
 
@@ -45,7 +74,7 @@ class ShotProcessor:
         }
 
         if valid_count > 0:
-            valid_picks = picks[valid_mask]
+            valid_picks = picks_samples[valid_mask]
             stats["min_pick"] = float(valid_picks.min())
             stats["max_pick"] = float(valid_picks.max())
             stats["mean_pick"] = float(valid_picks.mean())
@@ -62,16 +91,16 @@ class ShotProcessor:
                 f"High invalid picks: {invalid_count}/{total} ({invalid_count / total:.1%})"
             )
 
-        # Clip out-of-range picks to valid range
-        cleaned_picks = np.clip(picks, 0, self.n_samples - 1)
+        return picks_samples, stats
 
-        return cleaned_picks, stats
+    # In src/preprocessing/processor.py - update create_mask_vectorized
 
     def create_mask_vectorized(self, picks: np.ndarray) -> np.ndarray:
         """
         Create 3-class segmentation mask using vectorized operations.
 
         Class mapping:
+            -1: Unlabeled / IGNORE (not used in training)
             0: Before first break
             2: Strip around first break
             1: After first break
@@ -83,18 +112,23 @@ class ShotProcessor:
         samples = np.arange(self.n_samples).reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
-        # Vectorized conditions
+        # ✅ FIX: Invalid if pick <= 0 OR pick >= n_samples
+        valid_mask = (picks > 0) & (picks < self.n_samples)  # NOT >=
+        valid_mask_2d = valid_mask.reshape(-1, 1)
+
+        # Vectorized conditions for labeled traces
         strip_mask = (samples >= picks_expanded - self.half_width) & (
             samples <= picks_expanded + self.half_width
         )
         after_mask = samples > picks_expanded + self.half_width
 
-        mask[strip_mask] = 2
-        mask[after_mask] = 1
+        # Apply to valid traces only
+        mask[valid_mask_2d & strip_mask] = 2
+        mask[valid_mask_2d & after_mask] = 1
 
-        # Invalid picks (0 or negative) become class 0
+        # Invalid picks become ignore_index
         invalid = (picks <= 0) | (picks >= self.n_samples)
-        mask[invalid, :] = 0
+        mask[invalid, :] = self.ignore_index
 
         return mask
 

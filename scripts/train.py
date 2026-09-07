@@ -37,8 +37,6 @@ from src.training.trainer import SeismicTrainer
 from src.utils.hdf5_utils import load_shot_indices, validate_hdf5
 from src.utils.logger import create_task_name, setup_logger
 
-# In scripts/train.py
-
 
 @click.command()
 @click.option("--config", "-c", required=True, help="Path to config YAML file")
@@ -109,19 +107,31 @@ from src.utils.logger import create_task_name, setup_logger
 )
 @click.option("--learning-rate", "-lr", type=float, help="Override learning rate")
 @click.option("--num-workers", "-w", type=int, help="Override number of workers")
-@click.option('--loss', '-l',
-              type=click.Choice(['cross_entropy', 'focal', 'dice', 'combo']),
-              default='cross_entropy',
-              help='Loss function to use')
-@click.option('--dice-weight', type=float, default=0.5, help='Dice weight for combo loss')
-@click.option('--focal-gamma', type=float, default=2.0, help='Focal gamma for focal/combo loss')
-
-@click.option('--checkpoint-every', '-ce', type=int, default=5,
-              help='Save checkpoint every N epochs')
-@click.option('--early-stopping', '-es', type=int, default=5,
-              help='Early stopping patience')
-@click.option('--batch-size', '-b', type=int, help='Override batch size')
-@click.option('--cache-size', type=int, help='Override cache size')
+@click.option(
+    "--loss",
+    "-l",
+    type=click.Choice(["cross_entropy", "focal", "dice", "combo"]),
+    default="cross_entropy",
+    help="Loss function to use",
+)
+@click.option(
+    "--dice-weight", type=float, default=0.5, help="Dice weight for combo loss"
+)
+@click.option(
+    "--focal-gamma", type=float, default=2.0, help="Focal gamma for focal/combo loss"
+)
+@click.option(
+    "--checkpoint-every",
+    "-ce",
+    type=int,
+    default=5,
+    help="Save checkpoint every N epochs",
+)
+@click.option(
+    "--early-stopping", "-es", type=int, default=5, help="Early stopping patience"
+)
+@click.option("--batch-size", "-b", type=int, help="Override batch size")
+@click.option("--cache-size", type=int, help="Override cache size")
 def main(
     config: str,
     resume: str,
@@ -147,7 +157,7 @@ def main(
     learning_rate: float,
     num_workers: int,
     dice_weight: float,
-    focal_gamma: float
+    focal_gamma: float,
 ):
     """Run the training pipeline."""
 
@@ -304,7 +314,7 @@ def main(
                         cfg.n_samples,
                     )
 
-                    processed_data, processed_mask = processor.process_shot(
+                    processed_data, processed_mask, _ = processor.process_shot(
                         shot_data, shot_picks
                     )
                     data_batch[i] = torch.tensor(processed_data, dtype=torch.float32)

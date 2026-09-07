@@ -170,7 +170,7 @@ def get_cuda_memory_info() -> dict[str, float] | None:
             "devices": devices,
         }
 
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not get CUDA memory info: {e}")
         return None
 
@@ -206,7 +206,7 @@ def get_mps_memory_info() -> dict[str, float] | None:
             "aggressive_limit_gb": min(mps_limit * 0.95, 16.0),
         }
 
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not get MPS memory info: {e}")
         return None
 
@@ -461,7 +461,7 @@ def get_all_model_recommendations(
                 device_type,
             )
             recommendations[model_name] = rec
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not calculate for {model_name}: {e}")
 
     return recommendations
@@ -788,7 +788,7 @@ def get_actual_data_shape(dataset_name: str) -> tuple[int, int]:
         if data is not None:
             # data shape: (n_shots, target_traces, n_samples)
             return (data.shape[1], data.shape[2])  # (traces, samples)
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not load chunk for {dataset_name}: {e}")
 
     return (0, 0)

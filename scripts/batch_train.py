@@ -47,7 +47,7 @@ import re
 
 def is_real_error(output: str) -> bool:
     """Check if the output contains a REAL error."""
-    
+
     # ============================================================
     # STRATEGY 1: Check for explicit error patterns
     # ============================================================
@@ -67,46 +67,63 @@ def is_real_error(output: str) -> bool:
         r"^.*TimeoutError:",
         r"^.*MemoryError:",
         r"^.*OutOfMemoryError:",
-        
         # PyTorch specific
         r"^.*MPS out of memory",
         r"^.*CUDA out of memory",
         r"^.*torch\.cuda\.OutOfMemoryError",
-        
         # Train.py specific errors
         r"^.*Error:",
         r"^.*Exception:",
         r"^.*AssertionError",
-        
         # Stack trace indicator (must have actual error after)
         r"Traceback \(most recent call last\):",
+        # 🆕 Exit code patterns (non-exception errors)
+        r"exited with code [1-9]",
+        r"Process exited with code [1-9]",
+        r"returned non-zero exit code",
     ]
-    
+
     # Check each pattern - only if the line contains error context
-    for line in output.split('\n'):
+    for line in output.split("\n"):
         line = line.strip()
         if not line:
             continue
-            
+
         # Skip MLflow info/warning lines
         if "mlflow" in line.lower():
             continue
-            
+
         # Skip INFO/WARNING/DEBUG log lines (they're not errors)
-        if any(level in line for level in [" INFO ", " WARNING ", " DEBUG ", " CRITICAL "]) and " ERROR " not in line:
+        if (
+            any(
+                level in line
+                for level in [" INFO ", " WARNING ", " DEBUG ", " CRITICAL "]
+            )
+            and " ERROR " not in line
+        ):
             continue
-        
+
         # Check real error patterns
         for pattern in real_error_patterns:
             if re.search(pattern, line, re.IGNORECASE):
                 return True
-    
+
     # ============================================================
     # STRATEGY 2: Check for exit codes
     # ============================================================
     if "sys.exit(1)" in output or "exit(1)" in output:
         return True
-    
+
+    # 🆕 Additional exit code patterns
+    exit_patterns = [
+        r"exited with code [1-9]",
+        r"Process exited with code [1-9]",
+        r"returned non-zero exit code",
+    ]
+    for pattern in exit_patterns:
+        if re.search(pattern, output, re.IGNORECASE):
+            return True
+
     # ============================================================
     # STRATEGY 3: Check for "failed" in error context
     # ============================================================
@@ -118,12 +135,7 @@ def is_real_error(output: str) -> bool:
     for pattern in failed_patterns:
         if re.search(pattern, output, re.IGNORECASE):
             return True
-    
-    # ============================================================
-    # STRATEGY 4: Check return code (but only if we have it)
-    # ============================================================
-    # return_code is handled separately in train_dataset
-    
+
     return False
 
 
@@ -214,6 +226,27 @@ def is_memory_error(error_message: str) -> bool:
     """
     # First check if it's even a real error
     if not is_real_error(error_message):
+        # But also check if it contains memory-related terms directly
+        # (for cases where the error message is short)
+        memory_patterns = [
+            r"out of memory",
+            r"OOM",
+            r"MPS out of memory",
+            r"CUDA out of memory",
+            r"cannot allocate",
+            r"memory exhausted",
+            r"OutOfMemoryError",
+            r"MemoryError",
+            r"torch\.cuda\.OutOfMemoryError",
+            r"RuntimeError: MPS",
+            r"RuntimeError: CUDA",
+            r"MPS: out of memory",  # 🆕 Add this pattern
+            r"Out of memory\. Try reducing",  # 🆕 Add this pattern
+        ]
+
+        for pattern in memory_patterns:
+            if re.search(pattern, error_message, re.IGNORECASE):
+                return True
         return False
 
     # Then check for memory-specific patterns
@@ -229,6 +262,8 @@ def is_memory_error(error_message: str) -> bool:
         r"torch\.cuda\.OutOfMemoryError",
         r"RuntimeError: MPS",
         r"RuntimeError: CUDA",
+        r"MPS: out of memory",  # 🆕 Add this pattern
+        r"Out of memory\. Try reducing",  # 🆕 Add this pattern
     ]
 
     for pattern in memory_patterns:
@@ -318,27 +353,33 @@ def train_dataset(
     return_code = 0
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
-        
+        process_result = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, check=False
+        )
+
         duration = time.time() - start_time
-        return_code = result.returncode
-        combined_output = result.stdout + result.stderr
+        return_code = process_result.returncode
+        combined_output = process_result.stdout + process_result.stderr
         output = combined_output
-        
+
         has_real_error = is_real_error(combined_output)
-        
-        if result.returncode != 0 and not has_real_error:
+
+        if process_result.returncode != 0 and not has_real_error:
             mlflow_only = True
-            for line in combined_output.split('\n'):
-                if line.strip() and "mlflow" not in line.lower() and not ("INFO" in line or "WARNING" in line):
+            for line in combined_output.split("\n"):
+                if (
+                    line.strip()
+                    and "mlflow" not in line.lower()
+                    and not ("INFO" in line or "WARNING" in line)
+                ):
                     mlflow_only = False
                     break
-            
+
             has_real_error = not mlflow_only
-        
+
         success = not has_real_error
-        
-        return {
+
+        result_dict: dict[str, Any] = {
             "success": success,
             "dataset": dataset_name,
             "config": config_variant,
@@ -347,10 +388,11 @@ def train_dataset(
             "duration": duration,
             "return_code": return_code,
         }
-        
-    except Exception as e: # noqa: BLE001
+        return result_dict
+
+    except Exception as e:  # noqa: BLE001
         duration = time.time() - start_time
-        return {
+        result_dict_2: dict[str, Any] = {
             "success": False,
             "dataset": dataset_name,
             "config": config_variant,
@@ -359,6 +401,7 @@ def train_dataset(
             "duration": duration,
             "return_code": -1,
         }
+        return result_dict_2
 
 
 # ============================================================
@@ -369,7 +412,7 @@ def train_dataset(
 def load_batch_config(config_file: str) -> dict[str, Any]:
     """Load batch configuration from YAML file."""
     with open(config_file, "r") as f:
-        config = yaml.safe_load(f)
+        config: dict[str, Any] = yaml.safe_load(f)
 
     # Set defaults
     config.setdefault("global", {})
@@ -580,6 +623,16 @@ def run_batch_training(
                 }
             )
 
+            failed_datasets.append(dataset_name)
+            results[dataset_name] = {
+                "success": False,
+                "attempts": dataset_results,
+                "best_config": None,
+                "error": dataset_results[-1].get("error")
+                if dataset_results
+                else "All attempts failed",
+            }
+
             if global_config.get("skip_failed", True):
                 logger.warning(
                     f"⚠️ Dataset {dataset_name} failed all attempts, moving to next dataset"
@@ -734,7 +787,11 @@ def run_auto_batch_training(
         get_recommended_memory_limits,
     )
 
-    info = get_device_info()
+    info: dict[str, Any] = get_device_info()
+    device_type: str = info.get("device_type", "cpu")
+    available_gb: float = info.get("available_gb", 8.0)
+    device_name: str = info.get("device_name", "CPU")
+
     recommendations = get_recommended_memory_limits(info)
 
     # Determine device and available memory
@@ -826,7 +883,7 @@ def run_auto_batch_training(
             data = chunk.get("data")
             if data is not None:
                 return (data.shape[1], data.shape[2])
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not load chunk for {dataset_name}: {e}")
 
         return (0, 0)
@@ -894,7 +951,7 @@ def run_auto_batch_training(
         recommended_batch = profile.recommended_batch_size
 
         # Optimal batch = min(what fits, what's recommended, dataset size)
-        optimal_batch = min(
+        optimal_batch: int = min(
             max(1, max_batch_by_memory),
             int(recommended_batch * dataset_factor),
             total_shots if total_shots > 0 else 64,
@@ -920,7 +977,7 @@ def run_auto_batch_training(
 
         recommended_cache = profile.recommended_cache_size
 
-        optimal_cache = min(
+        optimal_cache: int = min(
             max(1, max_cache_by_memory),
             int(recommended_cache * cache_factor),
             num_chunks if num_chunks > 0 else 4,
@@ -941,7 +998,7 @@ def run_auto_batch_training(
         else:
             overhead_factor = 1.2
 
-        memory_limit_gb = (total_memory_mb / 1024) * overhead_factor
+        memory_limit_gb: float = (total_memory_mb / 1024) * overhead_factor
         memory_limit_gb = round(memory_limit_gb * 2) / 2  # Round to nearest 0.5
         memory_limit_gb = max(0.5, memory_limit_gb)
 
@@ -1220,7 +1277,9 @@ def run_auto_batch_training(
         dataset_variants = []
         for v in all_variants:
             # Skip certain models for large datasets
-            if (dataset_name in skip_for_large or "Lalor" in dataset_name) and v["model"] in skip_for_large:
+            if (dataset_name in skip_for_large or "Lalor" in dataset_name) and v[
+                "model"
+            ] in skip_for_large:
                 continue
             dataset_variants.append(v)
 

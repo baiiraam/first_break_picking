@@ -97,7 +97,7 @@ def main(
         else:
             model_obj.load_state_dict(checkpoint)
             logger.info("Loaded model state dict")
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to load model: {e}")
         sys.exit(1)
 
@@ -124,7 +124,7 @@ def main(
             logger.info(
                 f"  File size: {scripted_path.stat().st_size / (1024 * 1024):.2f} MB"
             )
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.error(f"  ❌ TorchScript export failed: {e}")
 
     # Export to ONNX
@@ -157,10 +157,10 @@ def main(
                 logger.info("  ✅ ONNX model verified")
             except ImportError:
                 logger.info("  ⚠️  ONNX library not installed, skipping verification")
-            except Exception as e: # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"  ⚠️  ONNX verification failed: {e}")
 
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.error(f"  ❌ ONNX export failed: {e}")
 
     logger.info("\n" + "=" * 60)

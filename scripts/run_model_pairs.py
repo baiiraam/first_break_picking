@@ -5,11 +5,10 @@ Trains models in pairs: [m1, m2] on dataset1, then dataset2, etc.
 """
 
 import os
-import sys
 import subprocess
+import sys
+
 import click
-from pathlib import Path
-import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -24,10 +23,10 @@ logger = setup_logger(task_name="model_pairs")
 
 # Define model pairs (in order of increasing size)
 MODEL_PAIRS = [
-    ["pico", "nano"],           # Pair 1: ~2K + ~10K params
-    ["tiny", "mpslight"],       # Pair 2: ~50K + ~1.7M params
-    ["light", "mobile"],        # Pair 3: ~2.5M + ~3.5M params
-    ["efficient", "unet"],      # Pair 4: ~5M + ~31M params
+    ["pico", "nano"],  # Pair 1: ~2K + ~10K params
+    ["tiny", "mpslight"],  # Pair 2: ~50K + ~1.7M params
+    ["light", "mobile"],  # Pair 3: ~2.5M + ~3.5M params
+    ["efficient", "unet"],  # Pair 4: ~5M + ~31M params
 ]
 
 # All datasets
@@ -46,6 +45,7 @@ SKIP_PER_DATASET = {
 # MAIN FUNCTION
 # ============================================================
 
+
 def run_model_pairs(
     model_pairs: list,
     datasets: list,
@@ -57,16 +57,16 @@ def run_model_pairs(
 ):
     """
     Run model pairs across all datasets.
-    
+
     Order: For each pair, train both models on dataset1, then dataset2, etc.
     """
-    
+
     total_combinations = sum(
         len([m for m in pair if m not in SKIP_PER_DATASET.get(dataset, [])])
         for pair in model_pairs
         for dataset in datasets
     )
-    
+
     logger.info("=" * 80)
     logger.info("🚀 MODEL PAIRS TRAINING")
     logger.info("=" * 80)
@@ -76,18 +76,17 @@ def run_model_pairs(
     logger.info(f"Epochs: {epochs}")
     logger.info(f"Device: {device}")
     logger.info("=" * 80)
-    
-    pair_count = 0
+
     combo_count = 0
-    
+
     # ============================================================
     # OUTER LOOP: Model Pairs
     # ============================================================
     for pair_idx, model_pair in enumerate(model_pairs, 1):
-        logger.info(f"\n{'='*80}")
+        logger.info(f"\n{'=' * 80}")
         logger.info(f"📊 PAIR {pair_idx}/{len(model_pairs)}: {model_pair}")
-        logger.info(f"{'='*80}")
-        
+        logger.info(f"{'=' * 80}")
+
         # Filter models for this pair (skip those that don't fit)
         available_models = []
         for model in model_pair:
@@ -100,74 +99,91 @@ def run_model_pairs(
                     break
             if not model_skipped:
                 available_models.append(model)
-        
+
         if not available_models:
             logger.warning(f"⚠️  No models available for pair {pair_idx}")
             continue
-        
+
         # ============================================================
         # INNER LOOP: Datasets
         # ============================================================
         for dataset_idx, dataset in enumerate(datasets, 1):
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'=' * 60}")
             logger.info(f"📁 DATASET {dataset_idx}/{len(datasets)}: {dataset}")
-            logger.info(f"{'='*60}")
-            
+            logger.info(f"{'=' * 60}")
+
             # Get models for this dataset (skip those that don't fit)
             dataset_models = [
-                m for m in available_models 
+                m
+                for m in available_models
                 if m not in SKIP_PER_DATASET.get(dataset, [])
             ]
-            
+
             if not dataset_models:
                 logger.warning(f"⚠️  No models available for {dataset}")
                 continue
-            
+
             # Train each model in the pair on this dataset
             for model in dataset_models:
                 combo_count += 1
-                logger.info(f"\n  🔬 [{combo_count}/{total_combinations}] Model: {model}")
-                
+                logger.info(
+                    f"\n  🔬 [{combo_count}/{total_combinations}] Model: {model}"
+                )
+
                 # Build command
                 cmd = [
                     "python3.12",
                     "scripts/train.py",
-                    "--config", f"configs/{dataset.lower()}.yaml",
-                    "--model", model,
-                    "--epochs", str(epochs),
-                    "--device", device,
-                    "--loss", "combo",
+                    "--config",
+                    f"configs/{dataset.lower()}.yaml",
+                    "--model",
+                    model,
+                    "--epochs",
+                    str(epochs),
+                    "--device",
+                    device,
+                    "--loss",
+                    "combo",
                 ]
-                
+
                 if verbose:
                     cmd.append("--verbose")
                 if log_memory:
                     cmd.append("--log-memory")
-                
+
                 if dry_run:
                     logger.info(f"  🏃 DRY RUN: {' '.join(cmd)}")
                     continue
-                
+
                 # Run training
                 logger.info(f"  🚀 Running: {' '.join(cmd)}")
-                
+
                 try:
+                    # Use check=False since we manually handle return code
                     result = subprocess.run(
                         cmd,
                         capture_output=True,
                         text=True,
+                        check=False,
                     )
-                    
+
                     if result.returncode == 0:
                         logger.info(f"  ✅ SUCCESS! {model} on {dataset}")
                     else:
                         logger.error(f"  ❌ FAILED! {model} on {dataset}")
                         if result.stderr:
                             logger.error(f"     Error: {result.stderr[:200]}")
-                
-                except Exception as e:
-                    logger.error(f"  ❌ ERROR: {e}")
-    
+
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"  ❌ PROCESS ERROR: {e}")
+                    if e.stderr:
+                        logger.error(f"     Error: {e.stderr[:200]}")
+                except OSError as e:
+                    logger.error(f"  ❌ OS ERROR: {e}")
+                # Remove blind Exception catch - we handle all expected cases above
+                except (ValueError, TypeError) as e:
+                    logger.error(f"  ❌ VALUE ERROR: {e}")
+
     # ============================================================
     # SUMMARY
     # ============================================================
@@ -186,7 +202,7 @@ def run_model_pairs(
 @click.option("--no-log-memory", is_flag=True, help="Disable memory logging")
 def main(epochs, device, dry_run, verbose, no_log_memory):
     """Run model pairs across all datasets."""
-    
+
     run_model_pairs(
         model_pairs=MODEL_PAIRS,
         datasets=DATASETS,

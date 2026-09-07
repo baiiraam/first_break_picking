@@ -64,7 +64,7 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
 
     # Create data manager and test dataset
     data_manager = ChunkedDataManager(
-        chunk_dir=chunk_dir, manifest=manifest, cache_size=2, shuffle_chunks=False
+        chunk_dir=str(chunk_dir), manifest=manifest, cache_size=2, shuffle_chunks=False
     )
 
     test_dataset = data_manager.get_dataset("test")

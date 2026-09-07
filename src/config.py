@@ -58,10 +58,6 @@ class SeismicConfig:
     lr_gamma: float = 0.5
     lr_T_max: int = 30
 
-    loss_function: str = "cross_entropy"
-    dice_weight: float = 0.5
-    focal_gamma: float = 2.0
-
     # === Regularization ===
     gradient_clip_value: float | None = 1.0
 
