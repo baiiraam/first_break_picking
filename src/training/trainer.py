@@ -50,6 +50,7 @@ class SeismicTrainer:
         self.callbacks = callbacks or []  # 🔥 NEW: Store callbacks
 
         # Setup model
+        self.model: nn.Module
         if config.multi_gpu and torch.cuda.device_count() > 1:
             self.model = nn.DataParallel(model, device_ids=config.gpu_ids)
             logger.info(f"Multi-GPU enabled: {torch.cuda.device_count()} GPUs")
@@ -81,11 +82,9 @@ class SeismicTrainer:
             enable_autolog=True,
         )
 
-        # 🔥 NEW: Initialize Memory Manager
-        self.memory_manager = get_memory_manager()
-        self.memory_manager.start()
-
-        self.registered_models = {}  # Track registered models for alias management
+        self.registered_models: dict[
+            str, dict[str, Any]
+        ] = {}  # Track registered models for alias management
 
         # 🔥 NEW: Initialize callbacks with trainer reference
         self._setup_callbacks()
@@ -113,7 +112,7 @@ class SeismicTrainer:
                     del test
                     logger.info("MPS device initialized successfully")
                     return torch.device("mps")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(
                         f"MPS initialization failed: {e}, falling back to CPU"
                     )
@@ -199,7 +198,7 @@ class SeismicTrainer:
         logger.info(
             f"Resumed from epoch {checkpoint['epoch']} with val_loss={checkpoint.get('val_loss', 'N/A')}"
         )
-        return checkpoint["epoch"], mlflow_run_id
+        return int(checkpoint["epoch"])
 
     # ============================================================
     # 🔥 NEW: UNIFIED STEP EXECUTION
@@ -416,6 +415,248 @@ class SeismicTrainer:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         run_name = f"{self.model_name}-{self.config.dataset_name}-{timestamp}"
 
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_type = self.model_name
+        dataset_name = self.config.dataset_name
+
+        # ============================================================
+        # 🔥 ADD DEBUG LOGGING HERE
+        # ============================================================
+        logger.info(
+            f"📦 _log_model_checkpoint: checkpoint triggered at epoch {epoch + 1}"
+        )
+        logger.info(f"   checkpoint_every: {self.config.checkpoint_every}")
+
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_type = self.model_name
+        dataset_name = self.config.dataset_name
+
+        # Prepare model for logging
+        model_to_save = (
+            self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        )
+        model_to_save.eval()
+
+        # Create input example for signature
+        sample_input = next(iter(self.dataloaders["val"]))[0][:1]
+
+        # Build registered model name
+        registered_name = format_registered_model_name(dataset_name)
+
+        # ============================================================
+        # 🔥 LOG WHAT WE'RE ABOUT TO DO
+        # ============================================================
+        logger.info(f"   Registered model name: {registered_name}")
+        logger.info(f"   Model type: {model_type}")
+        logger.info(f"   Dataset: {dataset_name}")
+
+        # Log model with MLflow registry
+        try:
+            model_info = self.mlflow_manager.log_model_with_registry(
+                model=model_to_save,
+                model_name=format_model_name(
+                    model_type, dataset_name, f"epoch_{epoch + 1}"
+                ),
+                dataset_name=dataset_name,
+                step=epoch + 1,
+                registered_model_name=registered_name,
+                input_example=sample_input.cpu().numpy(),
+                tags={
+                    "train_loss": str(train_loss),
+                    "val_loss": str(val_loss),
+                    "epoch": str(epoch + 1),
+                    "model_type": model_type,
+                },
+            )
+            logger.info(
+                f"✅ Model checkpoint logged to MLflow: {model_info.get('model_uri')}"
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"❌ Failed to log model checkpoint: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+        # Log metrics linked to this checkpoint
+        metrics = {
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "lr": self.optimizer.param_groups[0]["lr"],
+        }
+
+        if val_metrics:
+            metrics.update(
+                {
+                    "val_iou": val_metrics.get("mean_iou", 0),
+                    "val_f1": val_metrics.get("mean_f1", 0),
+                    "val_accuracy": val_metrics.get("accuracy", 0),
+                }
+            )
+            for i, iou in enumerate(val_metrics.get("iou_per_class", [])):
+                metrics[f"class_{i}_iou"] = iou
+
+        mlflow.log_metrics(metrics, step=epoch + 1, model_id=model_info.get("model_id"))
+
+        # Track registered models for alias management
+        if "registered_model_version" in model_info:
+            self.registered_models[registered_name] = {
+                "version": model_info["registered_model_version"],
+                "val_loss": val_loss,
+            }
+
+        logger.info(f"Model checkpoint logged to MLflow: {model_info.get('model_uri')}")
+
+        # Also save to local registry (existing behavior)
+        self._save_checkpoint(epoch + 1, train_loss, val_loss)
+
+    def _update_model_aliases(self, best_val_loss: float):
+        """
+        Update model aliases based on performance.
+        """
+        dataset_name = self.config.dataset_name
+        registered_name = format_registered_model_name(dataset_name)
+
+        if registered_name not in self.registered_models:
+            return
+
+        # Get current champion (best model)
+        champion_info = self.mlflow_manager.get_model_by_alias(
+            registered_model_name=registered_name,
+            alias="champion",
+        )
+
+        # Determine if this model is better
+        current_version = self.registered_models[registered_name]["version"]
+        current_val_loss = self.registered_models[registered_name]["val_loss"]
+
+        if champion_info:
+            # Get champion's validation loss
+            champion_metrics = self.mlflow_manager.get_run_metrics(champion_info.run_id)
+            champion_val_loss = float(
+                champion_metrics.get("metrics", {}).get("val_loss", float("inf"))
+            )
+
+            if current_val_loss < champion_val_loss:
+                # New model is better → promote to champion
+                self.mlflow_manager.set_model_alias(
+                    registered_model_name=registered_name,
+                    alias="champion",
+                    version=current_version,
+                )
+                logger.info(
+                    f"🚀 New champion model! Version {current_version} with val_loss {current_val_loss:.4f}"
+                )
+                self.mlflow_manager.set_model_alias(
+                    registered_model_name=registered_name,
+                    alias="challenger",
+                    version=champion_info.version,
+                )
+            else:
+                self.mlflow_manager.set_model_alias(
+                    registered_model_name=registered_name,
+                    alias="challenger",
+                    version=current_version,
+                )
+                logger.info(
+                    f"Challenger model version {current_version} with val_loss {current_val_loss:.4f}"
+                )
+        else:
+            # No champion yet → first model is champion
+            self.mlflow_manager.set_model_alias(
+                registered_model_name=registered_name,
+                alias="champion",
+                version=current_version,
+            )
+            logger.info(
+                f"First champion model! Version {current_version} with val_loss {current_val_loss:.4f}"
+            )
+
+        # Set staging alias for latest model
+        self.mlflow_manager.set_model_alias(
+            registered_model_name=registered_name,
+            alias="staging",
+            version=current_version,
+        )
+
+    def _log_sample_predictions(self, epoch: int):
+        """Log sample predictions to TensorBoard and MLflow."""
+        if (
+            self.config.log_predictions_every <= 0
+            or epoch % self.config.log_predictions_every != 0
+        ):
+            return
+
+        logger.info(f"📸 Logging sample predictions (epoch {epoch})...")
+
+        self.model.eval()
+        num_samples = min(4, len(self.dataloaders["val"].dataset))
+
+        with torch.no_grad():
+            for idx in range(num_samples):
+                data, mask = self.dataloaders["val"].dataset[idx]
+                x = data.unsqueeze(0).to(self.device)
+
+                output = self.model(x)
+                pred = torch.argmax(output, dim=1).cpu().numpy()[0]
+
+                data_np = data.numpy()[0]
+                mask_np = mask.numpy()
+                shot_id = self.dataloaders["val"].dataset.get_shot_id(idx)
+
+                # Create figure
+                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+                # Original seismogram
+                axes[0].imshow(
+                    data_np.T,
+                    cmap="seismic",
+                    aspect="auto",
+                    vmin=-np.percentile(np.abs(data_np), 95),
+                    vmax=np.percentile(np.abs(data_np), 95),
+                )
+                axes[0].set_title(f"Seismogram (Shot {shot_id})")
+                axes[0].set_xlabel("Trace")
+                axes[0].set_ylabel("Sample")
+
+                # Ground truth mask
+                axes[1].imshow(mask_np.T, cmap="tab10", aspect="auto", vmin=0, vmax=2)
+                axes[1].set_title("Ground Truth")
+                axes[1].set_xlabel("Trace")
+                axes[1].set_ylabel("Sample")
+
+                # Prediction
+                axes[2].imshow(pred.T, cmap="tab10", aspect="auto", vmin=0, vmax=2)
+                axes[2].set_title("Prediction")
+                axes[2].set_xlabel("Trace")
+                axes[2].set_ylabel("Sample")
+
+                plt.tight_layout()
+
+                # Log to TensorBoard
+                self.writer.add_figure(f"Seismogram/Shot_{shot_id}", fig, epoch)
+
+                # Log to MLflow
+                temp_path = f"temp_prediction_{shot_id}_{epoch}.png"
+                fig.savefig(temp_path, dpi=150, bbox_inches="tight")
+                mlflow.log_artifact(
+                    temp_path, artifact_path=f"predictions/epoch_{epoch}"
+                )
+                os.remove(temp_path)
+
+                plt.close(fig)
+
+    def fit(self, resume_from: str | None = None, verbose: bool = False):
+        """Main training loop with integrated logging."""
+
+        # Setup
+        start_epoch = 0
+        if resume_from and os.path.exists(resume_from):
+            start_epoch = self.load_checkpoint(resume_from)
+
+        config_dict = self.config.to_dict()
+        config_dict["model_name"] = self.model_name
+
+        # Start MLflow run with tags
         self.mlflow_manager.start_run(
             config_dict=config_dict,
             run_name=run_name,
@@ -473,11 +714,11 @@ class SeismicTrainer:
             # Warmup
             self._warmup_mps()
 
-            # Training loop
-            best_val_loss = float("inf")
-            best_val_iou = 0.0
-            patience_counter = 0
-            epoch_times = []
+        # Training loop
+        best_val_loss = float("inf")
+        best_val_iou = 0.0
+        patience_counter = 0
+        epoch_times: list[float] = []
 
             for epoch in range(start_epoch, self.config.n_epochs):
                 epoch_start = datetime.now(timezone.utc)

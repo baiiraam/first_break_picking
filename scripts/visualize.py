@@ -64,7 +64,7 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
 
     # Create data manager and test dataset
     data_manager = ChunkedDataManager(
-        chunk_dir=chunk_dir, manifest=manifest, cache_size=2, shuffle_chunks=False
+        chunk_dir=str(chunk_dir), manifest=manifest, cache_size=2, shuffle_chunks=False
     )
 
     test_dataset = data_manager.get_dataset("test")
@@ -104,8 +104,8 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
             data_batch = data.unsqueeze(0).to(device_obj)
 
             # Predict
-            output = model_obj(data_batch)
-            pred = torch.argmax(output, dim=1).cpu().numpy()[0]
+            output_tensor = model_obj(data_batch)
+            pred = torch.argmax(output_tensor, dim=1).cpu().numpy()[0]
 
             # Convert to numpy
             data_np = data.numpy()[0]  # (1578, 751)

@@ -424,16 +424,47 @@ class TestProcessor:
         assert stats["n_valid"] == 49  # One unlabeled
         assert stats["original_traces"] == 50
 
+    # tests/test_pipeline.py - Update TestProcessor.test_create_mask
+
     def test_create_mask(self):
         """Test mask creation."""
-        processor = ShotProcessor(target_traces=1578, n_samples=751, strip_width=8)
+        processor = ShotProcessor(
+            target_traces=1578,
+            n_samples=751,
+            strip_width=8,
+            ignore_index=-1,  # Explicitly set
+            sampling_interval_ms=2.0,
+        )
 
+        # Valid picks: 45, 100, 200
+        # Invalid picks: -1, 0 (both should be ignored)
         picks = np.array([45, 100, -1, 0, 200])
         mask = processor.create_mask_vectorized(picks)
 
         assert mask.shape == (5, 751)
-        # Check that classes are 0, 1, 2
-        assert set(np.unique(mask)) <= {0, 1, 2}
+
+        # Valid traces should have classes 0, 1, 2
+        # Invalid traces should be all -1
+        unique_vals = set(np.unique(mask))
+
+        # Trace 0 (pick=45): should have 0,1,2
+        assert set(np.unique(mask[0])) == {0, 1, 2}
+
+        # Trace 1 (pick=100): should have 0,1,2
+        assert set(np.unique(mask[1])) == {0, 1, 2}
+
+        # Trace 2 (pick=-1): should be all -1
+        assert set(np.unique(mask[2])) == {-1}
+
+        # Trace 3 (pick=0): should be all -1 (pick=0 is invalid)
+        assert set(np.unique(mask[3])) == {-1}
+
+        # Trace 4 (pick=200): should have 0,1,2
+        assert set(np.unique(mask[4])) == {0, 1, 2}
+
+        # Overall unique values should include -1
+        assert -1 in unique_vals
+        assert all(x in [0, 1, 2, -1] for x in unique_vals)
 
 
 # ============================================================

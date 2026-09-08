@@ -4,6 +4,8 @@ Parameters: ~10K only!
 Training time: ~30 seconds per epoch
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -87,4 +89,4 @@ class NanoUNet(nn.Module):
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
 
-        return out.contiguous()
+        return cast(torch.Tensor, out.contiguous())

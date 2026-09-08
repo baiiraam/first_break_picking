@@ -18,7 +18,7 @@ from collections.abc import Generator
 # Add this after the existing imports
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 import mlflow
 import mlflow.pytorch
@@ -152,8 +152,8 @@ class MLflowManager:
             except (mlflow.MlflowException, OSError) as e:
                 logger.warning(f"PyTorch autologging failed: {e}")
 
-        self.current_run = None
-        self.run_id = None
+        self.current_run: Any = None
+        self.run_id: str | None = None
         self.client = mlflow.MlflowClient()
 
     def start_run(
@@ -212,6 +212,7 @@ class MLflowManager:
         mlflow.set_tag("run_type", "new")
 
         logger.info(f"MLflow run started: {run_name} (ID: {self.run_id})")
+        assert self.run_id is not None
         return self.run_id
 
     def set_run(self, run_id: str):
@@ -341,12 +342,9 @@ class MLflowManager:
                 model_version_tags.update(tags)
 
             try:
-                for key, value in model_version_tags.items():
+                for k, v in model_version_tags.items():
                     self.client.set_model_version_tag(
-                        name=registered_model_name,
-                        version=version,
-                        key=key,
-                        value=value,
+                        name=registered_model_name, version=version, key=k, value=str(v)
                     )
                 logger.info(
                     f"Added tags to model version {version} of {registered_model_name}"
@@ -381,7 +379,7 @@ class MLflowManager:
             self.client.set_registered_model_alias(
                 name=registered_model_name,
                 alias=alias,
-                version=version,
+                version=str(version),
             )
             logger.info(
                 f"Set alias '{alias}' = version {version} for {registered_model_name}"
@@ -422,7 +420,7 @@ class MLflowManager:
         filter_string: str | None = None,
         order_by: list[dict[str, str]] | None = None,
         max_results: int = 10,
-        output_format: str = "list",
+        output_format: Literal["list", "pandas"] = "list",
     ) -> list[Any]:
         """
         Search and compare logged models.
@@ -441,10 +439,10 @@ class MLflowManager:
                 filter_string=filter_string,
                 order_by=order_by,
                 max_results=max_results,
-                output_format=output_format,
+                output_format=output_format,  # type: ignore[call-overload]
             )
             logger.info(f"Search returned {len(results)} models")
-            return results
+            return list(results)
         except (mlflow.MlflowException, OSError) as e:
             logger.warning(f"Search failed: {e}")
             return []

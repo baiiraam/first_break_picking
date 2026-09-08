@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Evaluation script for trained seismic FBP model.
 """
@@ -7,6 +8,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, cast
 
 import click
 import mlflow
@@ -111,7 +113,7 @@ def main(
 
     # Create data manager
     data_manager = ChunkedDataManager(
-        chunk_dir=chunk_dir,
+        chunk_dir=str(chunk_dir),
         manifest=manifest,
         cache_size=2,
         shuffle_chunks=False,
@@ -148,7 +150,7 @@ def main(
             # Search by metrics
             best_models = mlflow_manager.search_models(
                 filter_string=f"tags.dataset = '{cfg.dataset_name}'",
-                order_by=[{"field_name": "metrics.val_iou", "ascending": False}],
+                order_by=[{"field_name": "metrics.val_iou", "ascending": False}],  # type: ignore[dict-item]
                 max_results=1,
             )
             if best_models:
@@ -160,7 +162,15 @@ def main(
                 logger.error(f"No model found for dataset '{cfg.dataset_name}'")
                 sys.exit(1)
 
-        logger.info("✅ Model loaded successfully from MLflow")
+        # Load from MLflow
+        try:
+            logger.info(f"Loading model from MLflow: {model_uri}")
+            model_obj = mlflow.pytorch.load_model(model_uri)
+            model_obj = model_obj.to(device_obj)
+            logger.info("✅ Model loaded successfully from MLflow")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to load from MLflow: {e}")
+            sys.exit(1)
 
     else:
         # ✅ Use unified loader for local and MLflow checkpoints
@@ -180,7 +190,7 @@ def main(
                 model_obj = mlflow.pytorch.load_model(model)
                 model_obj = model_obj.to(device_obj)
                 logger.info("✅ Model loaded successfully from MLflow")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to load from MLflow: {e}")
                 sys.exit(1)
         else:
@@ -203,7 +213,7 @@ def main(
                     device=device_obj,
                 )
                 logger.info("✅ Model loaded successfully from file")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to load model: {e}")
                 sys.exit(1)
 
@@ -213,8 +223,8 @@ def main(
     # ============================================================
     # EVALUATE EACH SPLIT
     # ============================================================
-    all_results = {}
-    all_detailed_results = []
+    all_results: dict[str, Any] = {}
+    all_detailed_results: list[dict[str, Any]] = []
 
     for split_name in splits:
         logger.info(f"\n{'=' * 60}")
@@ -296,7 +306,9 @@ def main(
 
         logger.info("\n  Class-wise IoU:")
         class_names = ["Before", "After", "Strip"]
-        for i, (name, iou) in enumerate(zip(class_names, seg_results["iou_per_class"])):
+        for i, (name, iou) in enumerate(
+            zip(class_names, cast(list[float], seg_results["iou_per_class"]))
+        ):
             logger.info(f"    {name}: {iou:.4f}")
 
         logger.info(f"\n📊 FIRST-BREAK METRICS ({split_name.upper()})")
@@ -371,7 +383,7 @@ def main(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     # Save JSON results
-    results_to_save = {
+    results_to_save: dict[str, Any] = {
         "timestamp": timestamp,
         "dataset": cfg.dataset_name,
         "model_path": model,

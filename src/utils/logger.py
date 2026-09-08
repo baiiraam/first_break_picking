@@ -198,7 +198,7 @@ class SeismicLogger:
         try:
             rel_path = os.path.relpath(self.main_log_path, latest_dir)
             os.symlink(rel_path, latest_link)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not create symlink: {e}")
 
     def get_log_paths(self) -> dict:
