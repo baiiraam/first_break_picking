@@ -1,35 +1,29 @@
 #!/usr/bin/env python3
 """
-Batch training pipeline with config file support and in-process execution.
-Refactored to use direct function calls instead of subprocess.
+Batch training pipeline with config file support and memory error recovery.
 """
 
 import json
 import os
+import smtplib
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
 
 import click
+import psutil
+import requests
 import torch
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# Import the training function
-from scripts.train import run_training_session
-from src.config import SeismicConfig
-from src.training.types import BatchVariant, TrainingResult
 from src.utils.logger import setup_logger
-from src.utils.memory import (
-    MODEL_PROFILES,
-    check_memory_usage,
-    clear_memory,
-    get_available_memory_gb,
-)
-from src.utils.training import MemoryError, memory_recovery_guard
 
 # ============================================================
 # DATASET CONFIGURATIONS
@@ -42,95 +36,13 @@ DATASET_CONFIGS = {
     "Sudbury": {"config_file": "configs/sudbury.yaml"},
 }
 
+
 # ============================================================
-# CONFIGURATION GENERATION
+# NOTIFICATION FUNCTIONS
 # ============================================================
 
 
-def calculate_optimal_config(
-    model_name: str,
-    dataset_name: str,
-    available_memory_gb: float,
-) -> BatchVariant | None:
-    """Calculate optimal config for a model/dataset combination."""
-
-    profile = MODEL_PROFILES.get(model_name)
-    if not profile:
-        return None
-
-    # Get dataset info
-    dataset_info = get_dataset_info(dataset_name)
-    if not dataset_info:
-        return None
-
-    available_mb = available_memory_gb * 1024
-    base_memory_mb = profile.base_memory_mb
-    remaining_mb = available_mb - base_memory_mb
-    safe_remaining_mb = remaining_mb * 0.8
-
-    # Calculate optimal batch size
-    memory_per_batch_mb = profile.memory_per_batch_mb
-    dataset_factor = 1.0
-    if dataset_info.get("total_shots", 0) > 200:
-        dataset_factor = 1.2
-    elif dataset_info.get("total_shots", 0) < 50:
-        dataset_factor = 0.8
-
-    max_batch_by_memory = (
-        int(safe_remaining_mb / memory_per_batch_mb) if memory_per_batch_mb > 0 else 8
-    )
-    recommended_batch = profile.recommended_batch_size
-
-    optimal_batch = min(
-        max(1, max_batch_by_memory), int(recommended_batch * dataset_factor)
-    )
-
-    # Calculate optimal cache size
-    batch_memory_mb = optimal_batch * memory_per_batch_mb
-    remaining_after_batch_mb = safe_remaining_mb - batch_memory_mb
-
-    memory_per_cache_mb = profile.memory_per_cache_mb
-    recommended_cache = profile.recommended_cache_size
-
-    max_cache_by_memory = (
-        int(remaining_after_batch_mb / memory_per_cache_mb)
-        if memory_per_cache_mb > 0
-        else 3
-    )
-
-    optimal_cache = min(max(1, max_cache_by_memory), recommended_cache)
-
-    # Calculate memory limit
-    total_memory_mb = (
-        base_memory_mb
-        + optimal_batch * memory_per_batch_mb
-        + optimal_cache * memory_per_cache_mb
-    )
-
-    # Device overhead
-    if torch.backends.mps.is_available():
-        overhead_factor = 1.5
-    elif torch.cuda.is_available():
-        overhead_factor = 1.3
-    else:
-        overhead_factor = 1.2
-
-    memory_limit_gb = round((total_memory_mb / 1024) * overhead_factor, 1)
-    memory_limit_gb = max(0.5, memory_limit_gb)
-
-    # Determine class weights based on model size
-    if profile.params > 1_000_000:
-        class_weights = [0.05, 0.05, 0.9]
-    else:
-        class_weights = [0.2, 0.2, 0.6]
-
-    return BatchVariant(
-        model=model_name,
-        batch_size=optimal_batch,
-        cache_size=optimal_cache,
-        memory_limit_gb=memory_limit_gb,
-        class_weights=class_weights,
-    )
+import re
 
 
 def is_real_error(output: str) -> bool:
@@ -226,78 +138,58 @@ def is_real_error(output: str) -> bool:
 
     return False
 
-    manifest_path = Path(f"data/chunks/{dataset_name}/manifest.json")
-    if not manifest_path.exists():
-        return None
+
+def send_email_notification(subject: str, body: str, config: dict):
+    """Send email notification."""
+    if not config.get("enabled", False):
+        return
 
     try:
-        with open(manifest_path, "r") as f:
-            manifest = json.load(f)
+        msg = MIMEMultipart()
+        msg["From"] = config["sender"]
+        msg["To"] = config["recipient"]
+        msg["Subject"] = subject
 
-        config = manifest.get("config", {})
-        return {
-            "total_shots": manifest.get("total_shots", 0),
-            "total_traces": config.get("target_traces", 0),
-            "samples_per_trace": config.get("n_samples", 0),
-            "file_size_mb": sum(
-                c.get("file_size_mb", 0) for c in manifest.get("chunks", [])
-            ),
-            "chunk_size": config.get("chunk_size", 69),
-            "num_chunks": len(manifest.get("chunks", [])),
+        msg.attach(MIMEText(body, "plain"))
+
+        password = os.environ.get(config.get("password_env_var", "EMAIL_PASSWORD"))
+        if not password:
+            print("⚠️ Email password not found in environment")
+            return
+
+        server = smtplib.SMTP(config["smtp_server"], config["smtp_port"])
+        server.starttls()
+        server.login(config["sender"], password)
+        server.send_message(msg)
+        server.quit()
+        print(f"📧 Email sent to {config['recipient']}")
+    except (smtplib.SMTPException, ConnectionError, OSError) as e:
+        print(f"⚠️ Failed to send email: {e}")
+
+
+def send_slack_notification(message: str, config: dict):
+    """Send Slack notification."""
+    if not config.get("enabled", False):
+        return
+
+    webhook_url = os.environ.get(config.get("webhook_url_env_var", "SLACK_WEBHOOK_URL"))
+    if not webhook_url:
+        print("⚠️ Slack webhook URL not found in environment")
+        return
+
+    try:
+        payload = {
+            "channel": config.get("channel", "#ml-training"),
+            "text": message,
+            "username": "Batch Training Bot",
         }
-    except Exception:
-        return None
-
-
-def generate_fallback_variants(optimal: BatchVariant) -> list[BatchVariant]:
-    """Generate fallback variants when optimal config fails."""
-    variants = []
-
-    # Level 1: 75% batch
-    variants.append(
-        BatchVariant(
-            model=optimal.model,
-            batch_size=max(1, int(optimal.batch_size * 0.75)),
-            cache_size=optimal.cache_size,
-            memory_limit_gb=max(0.5, optimal.memory_limit_gb * 0.85),
-            class_weights=optimal.class_weights,
-        )
-    )
-
-    # Level 2: 75% cache
-    variants.append(
-        BatchVariant(
-            model=optimal.model,
-            batch_size=optimal.batch_size,
-            cache_size=max(1, int(optimal.cache_size * 0.75)),
-            memory_limit_gb=max(0.5, optimal.memory_limit_gb * 0.85),
-            class_weights=optimal.class_weights,
-        )
-    )
-
-    # Level 3: 50% both
-    variants.append(
-        BatchVariant(
-            model=optimal.model,
-            batch_size=max(1, int(optimal.batch_size * 0.5)),
-            cache_size=max(1, int(optimal.cache_size * 0.5)),
-            memory_limit_gb=max(0.5, optimal.memory_limit_gb * 0.7),
-            class_weights=optimal.class_weights,
-        )
-    )
-
-    # Level 4: Minimal
-    variants.append(
-        BatchVariant(
-            model=optimal.model,
-            batch_size=1,
-            cache_size=1,
-            memory_limit_gb=max(1.0, optimal.memory_limit_gb * 0.5),
-            class_weights=[0.2, 0.2, 0.6],
-        )
-    )
-
-    return variants
+        response = requests.post(webhook_url, json=payload)
+        if response.status_code == 200:
+            print("📨 Slack notification sent")
+        else:
+            print(f"⚠️ Slack notification failed: {response.status_code}")
+    except (smtplib.SMTPException, ConnectionError, OSError) as e:
+        print(f"⚠️ Failed to send Slack notification: {e}")
 
 
 # ============================================================
@@ -399,39 +291,67 @@ def clear_memory():
 
 def train_dataset(
     dataset_name: str,
-    variant: BatchVariant,
+    config_variant: dict[str, Any],
     global_config: dict[str, Any],
-) -> TrainingResult:
-    """
-    Train a single dataset with a specific configuration.
-    Uses in-process execution instead of subprocess.
-    """
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
+    """Train a single dataset with specific configuration."""
 
-    # Build config
     config_file = DATASET_CONFIGS[dataset_name]["config_file"]
 
-    with open(config_file, "r") as f:
-        config_dict = yaml.safe_load(f)
+    # Build command
+    cmd = [
+        "python3.12",
+        "scripts/train.py",
+        "--config",
+        config_file,
+        "--model",
+        config_variant["model"],
+    ]
 
-    # Apply variant settings
-    config_dict["batch_size"] = variant.batch_size
-    config_dict["cache_size"] = variant.cache_size
-    config_dict["class_weights"] = variant.class_weights
-    config_dict["strip_width"] = variant.strip_width
+    # Handle class weights - split comma-separated string into separate arguments
+    if config_variant.get("class_weights"):
+        weights = config_variant["class_weights"].split(",")
+        cmd.append("--class-weights")
+        cmd.extend(weights)  # Adds as 3 separate arguments: 0.1 0.1 0.8
 
-    # Apply global settings
+    if config_variant.get("batch_size"):
+        cmd.extend(["--batch-size", str(config_variant["batch_size"])])
+
+    # Add global training args
     if global_config.get("epochs"):
-        config_dict["n_epochs"] = global_config["epochs"]
+        cmd.extend(["--epochs", str(global_config["epochs"])])
     if global_config.get("device"):
-        config_dict["device"] = global_config["device"]
+        cmd.extend(["--device", global_config["device"]])
     if global_config.get("log_memory"):
-        config_dict["log_memory"] = True
-    if global_config.get("log_level"):
-        config_dict["log_level"] = global_config["log_level"]
+        cmd.append("--log-memory")
     if global_config.get("verbose"):
-        config_dict["verbose_training"] = True
+        cmd.append("--verbose")
+    if global_config.get("log_level") and global_config["log_level"] != "INFO":
+        cmd.extend(["--log-level", global_config["log_level"]])
+    if global_config.get("preprocess"):
+        cmd.append("--preprocess")
+    if global_config.get("checkpoint_every") and global_config["checkpoint_every"] != 5:
+        cmd.extend(["--checkpoint-every", str(global_config["checkpoint_every"])])
+    if global_config.get("early_stopping") and global_config["early_stopping"] != 5:
+        cmd.extend(["--early-stopping", str(global_config["early_stopping"])])
 
-    # Create config object
+    # Add any extra args
+    if extra_args:
+        cmd.extend(extra_args)
+
+    # Set environment for memory limits
+    env = os.environ.copy()
+    memory_limit = config_variant.get("memory_limit_gb", 8)
+    env["PYTORCH_MPS_MEMORY_LIMIT"] = str(int(memory_limit * 1e9))
+    env["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+
+    start_time = time.time()
+    duration = 0.0
+    success = False
+    output = ""
+    return_code = 0
+
     try:
         process_result = subprocess.run(
             cmd, capture_output=True, text=True, env=env, check=False
@@ -494,6 +414,7 @@ def load_batch_config(config_file: str) -> dict[str, Any]:
     with open(config_file, "r") as f:
         config: dict[str, Any] = yaml.safe_load(f)
 
+    # Set defaults
     config.setdefault("global", {})
     config["global"].setdefault("epochs", 30)
     config["global"].setdefault("device", "mps")
@@ -503,17 +424,18 @@ def load_batch_config(config_file: str) -> dict[str, Any]:
     config["global"].setdefault("preprocess", False)
     config["global"].setdefault("checkpoint_every", 5)
     config["global"].setdefault("early_stopping", 5)
+    config["global"].setdefault("timeout_seconds", 7200)
     config["global"].setdefault("skip_failed", True)
+    config["global"].setdefault("max_retries", 3)
     config["global"].setdefault("clear_memory_between_datasets", True)
     config["global"].setdefault("pause_between_datasets", 2)
 
     config.setdefault("variants", [])
-    config.setdefault("auto", {})
-    config["auto"].setdefault(
-        "model_order",
-        ["pico", "nano", "tiny", "mpslight", "light", "mobile", "efficient", "unet"],
-    )
-    config["auto"].setdefault("skip_for_large", ["unet"])
+    config.setdefault("monitoring", {})
+    config["monitoring"].setdefault("memory_warning_threshold_gb", 16.0)
+    config["monitoring"].setdefault("memory_critical_threshold_gb", 20.0)
+    config["monitoring"].setdefault("system_memory_percent_warning", 80)
+    config["monitoring"].setdefault("system_memory_percent_critical", 90)
 
     return config
 
@@ -527,16 +449,14 @@ def run_batch_training(
     config_file: str,
     selected_datasets: list[str] | None = None,
     override_args: dict[str, Any] | None = None,
-    use_auto_config: bool = True,
 ) -> dict[str, Any]:
     """
-    Run batch training with in-process execution.
+    Run batch training with configuration from YAML file.
 
     Args:
         config_file: Path to batch config YAML file
         selected_datasets: List of datasets to train (None = all)
         override_args: CLI overrides for config values
-        use_auto_config: Use auto-configuration or manual
 
     Returns:
         dict: Training results
@@ -546,7 +466,8 @@ def run_batch_training(
     batch_config = load_batch_config(config_file)
     global_config = batch_config["global"]
     dataset_overrides = batch_config.get("datasets", {})
-    auto_config = batch_config.get("auto", {})
+    variants = batch_config.get("variants", [])
+    monitoring = batch_config.get("monitoring", {})
 
     # Apply CLI overrides
     if override_args:
@@ -554,7 +475,7 @@ def run_batch_training(
             if value is not None:
                 global_config[key] = value
 
-    # Determine datasets
+    # Determine which datasets to train
     if selected_datasets is None:
         selected_datasets = list(DATASET_CONFIGS.keys())
 
@@ -567,77 +488,24 @@ def run_batch_training(
     logger = setup_logger(task_name="batch_train", log_dir="logs/batch")
 
     logger.info("=" * 80)
-    logger.info("🚀 BATCH TRAINING PIPELINE (In-Process)")
+    logger.info("🚀 BATCH TRAINING PIPELINE")
     logger.info("=" * 80)
     logger.info(f"Config file: {config_file}")
     logger.info(f"Datasets: {selected_datasets}")
     logger.info(f"Epochs: {global_config.get('epochs')}")
     logger.info(f"Device: {global_config.get('device')}")
-    logger.info(f"Auto-config: {use_auto_config}")
+    logger.info(f"Log memory: {global_config.get('log_memory')}")
+    logger.info(f"Verbose: {global_config.get('verbose')}")
+    logger.info(f"Log level: {global_config.get('log_level')}")
+    logger.info(f"Preprocess: {global_config.get('preprocess')}")
+    logger.info(f"Checkpoint every: {global_config.get('checkpoint_every')}")
+    logger.info(f"Early stopping: {global_config.get('early_stopping')}")
+    logger.info(f"Config variants: {len(variants)}")
+    logger.info(f"Skip failed: {global_config.get('skip_failed')}")
+    logger.info(f"Timeout: {global_config.get('timeout_seconds')}s")
     logger.info("=" * 80)
 
-    # Get available memory
-    available_gb = get_available_memory_gb()
-    logger.info(f"💾 Available memory: {available_gb:.1f} GB")
-
-    # ✅ Generate variants PER DATASET using a dictionary
-    all_variants = {}
-
-    if use_auto_config:
-        model_order = auto_config.get(
-            "model_order",
-            [
-                "pico",
-                "nano",
-                "tiny",
-                "mpslight",
-                "light",
-                "mobile",
-                "efficient",
-                "unet",
-            ],
-        )
-        skip_for_large = auto_config.get("skip_for_large", ["unet"])
-
-        for dataset_name in selected_datasets:
-            dataset_variants = []
-            for model_name in model_order:
-                if dataset_name in ["Lalor"] and model_name in skip_for_large:
-                    continue
-
-                optimal = calculate_optimal_config(
-                    model_name=model_name,
-                    dataset_name=dataset_name,
-                    available_memory_gb=available_gb,
-                )
-                if optimal:
-                    dataset_variants.extend([optimal] + generate_fallback_variants(optimal))
-            all_variants[dataset_name] = dataset_variants
-    else:
-        # Manual variants
-        for dataset_name in selected_datasets:
-            ds_config = dataset_overrides.get(dataset_name, {})
-            dataset_variants = []
-            for variant in batch_config.get("variants", []):
-                v = BatchVariant(
-                    model=variant.get("model", "mpslight"),
-                    batch_size=variant.get("batch_size", 4),
-                    cache_size=variant.get("cache_size", 3),
-                    memory_limit_gb=variant.get("memory_limit_gb", 8.0),
-                    class_weights=variant.get("class_weights", [0.05, 0.05, 0.9]),
-                    strip_width=variant.get("strip_width", 8),
-                )
-                if ds_config.get("batch_size_override"):
-                    v.batch_size = ds_config["batch_size_override"]
-                if ds_config.get("model_override"):
-                    v.model = ds_config["model_override"]
-                dataset_variants.append(v)
-            all_variants[dataset_name] = dataset_variants
-
-    total_variants = sum(len(v) for v in all_variants.values())
-    logger.info(f"📊 Generated {total_variants} variants across {len(selected_datasets)} datasets")
-
-    # Run training
+    # Start batch training
     results = {}
     successful_datasets = []
     failed_datasets = []
@@ -651,68 +519,107 @@ def run_batch_training(
         )
         logger.info(f"{'=' * 80}")
 
-        variants_to_try = all_variants.get(dataset_name, [])
-        logger.info(f"📊 {len(variants_to_try)} variants available")
+        # Get dataset-specific overrides
+        ds_config = dataset_overrides.get(dataset_name, {})
 
+        # Merge global config with dataset overrides
+        dataset_global = {**global_config}
+        for key, value in ds_config.items():
+            if key in [
+                "epochs",
+                "device",
+                "log_memory",
+                "verbose",
+                "log_level",
+                "preprocess",
+                "checkpoint_every",
+                "early_stopping",
+                "timeout_seconds",
+                "skip_failed",
+            ]:
+                dataset_global[key] = value
+
+        # Check memory before training
+        mem = check_memory_usage()
+        logger.info(
+            f"💾 Memory before: {mem['used_gb']:.1f}GB / {mem['total_gb']:.1f}GB ({mem['percent']}%)"
+        )
+
+        if mem["percent"] > monitoring.get("system_memory_percent_critical", 90):
+            logger.warning(
+                f"⚠️ Critical memory usage ({mem['percent']}%), consider freeing memory"
+            )
+
+        # Build extra args for this dataset
+        extra_args = []
+        if ds_config.get("batch_size_override"):
+            extra_args.extend(["--batch-size", str(ds_config["batch_size_override"])])
+        if ds_config.get("model_override"):
+            extra_args.extend(["--model", ds_config["model_override"]])
+
+        # Try each config variant
         dataset_success = False
         dataset_results = []
+        dataset_variants = variants if variants else [{}]  # At least one variant
 
-        for variant_idx, variant in enumerate(variants_to_try, 1):
+        for variant_idx, variant in enumerate(dataset_variants, 1):
             logger.info(
-                f"\n  🔄 Attempt {variant_idx}/{len(variants_to_try)}: {variant.model} (batch={variant.batch_size}, cache={variant.cache_size})"
+                f"\n  🔄 Attempt {variant_idx}/{len(dataset_variants)}: {variant}"
             )
 
-            # Check memory before
-            mem = check_memory_usage()
-            logger.info(
-                f"  💾 Memory: {mem['used_gb']:.1f}GB / {mem['total_gb']:.1f}GB ({mem['percent']}%)"
-            )
+            # Apply dataset overrides to variant
+            variant_copy = {**variant}
+            if ds_config.get("batch_size_override"):
+                variant_copy["batch_size"] = ds_config["batch_size_override"]
+            if ds_config.get("model_override"):
+                variant_copy["model"] = ds_config["model_override"]
 
             # Train
             result = train_dataset(
                 dataset_name=dataset_name,
-                variant=variant,
-                global_config=global_config,
+                config_variant=variant_copy,
+                global_config=dataset_global,
+                extra_args=extra_args,
             )
 
             dataset_results.append(result)
 
-            if result.success:
-                logger.info(f"  ✅ SUCCESS! {variant.model} trained on {dataset_name}")
-                logger.info(f"     Duration: {result.duration_seconds:.1f}s")
-                logger.info(f"     Best val_loss: {result.best_val_loss:.4f}")
+            if result["success"]:
+                logger.info(
+                    f"  ✅ SUCCESS! Dataset {dataset_name} trained successfully"
+                )
+                logger.info(f"  ⏱ Duration: {result['duration']:.1f}s")
                 dataset_success = True
                 successful_datasets.append(dataset_name)
+
+                # Save successful config for later
                 results[dataset_name] = {
                     "success": True,
-                    "attempts": len(dataset_results),
-                    "best_config": variant.to_dict(),
-                    "duration": result.duration_seconds,
-                    "best_model": variant.model,
-                    "best_val_loss": result.best_val_loss,
-                    "best_val_iou": result.best_val_iou,
-                    "mlflow_run_id": result.mlflow_run_id,
+                    "attempts": dataset_results,
+                    "best_config": variant_copy,
+                    "duration": result["duration"],
                 }
                 break
             else:
-                logger.warning(
-                    f"  ❌ Failed: {result.error_type}: {result.error_message[:100]}"
-                )
+                error_msg = result.get("error", "Unknown error")[:200]
+                logger.warning(f"  ❌ Failed: {error_msg}")
 
-                if result.error_type == "ModelOutOfMemoryError":
-                    logger.info("  🔄 OOM detected, trying next variant")
+                # Check if it's a memory error
+                if result.get("error") and is_memory_error(result["error"]):
+                    logger.info("  🔄 Memory error detected, trying next variant")
                     clear_memory()
                 else:
-                    logger.info("  ⚠️ Non-OOM error, skipping remaining variants")
+                    logger.info("  ⚠️ Non-memory error, skipping remaining variants")
                     break
 
+        # If all attempts failed
         if not dataset_success:
             errors.append(
                 {
                     "dataset": dataset_name,
-                    "error": dataset_results[-1].error_message
+                    "error": dataset_results[-1].get("error", "All attempts failed")
                     if dataset_results
-                    else "All attempts failed",
+                    else "No attempts",
                 }
             )
 
@@ -727,51 +634,60 @@ def run_batch_training(
             }
 
             if global_config.get("skip_failed", True):
-                logger.warning(f"⚠️ Dataset {dataset_name} failed, moving to next")
+                logger.warning(
+                    f"⚠️ Dataset {dataset_name} failed all attempts, moving to next dataset"
+                )
                 failed_datasets.append(dataset_name)
                 results[dataset_name] = {
                     "success": False,
-                    "attempts": len(dataset_results),
+                    "attempts": dataset_results,
                     "best_config": None,
-                    "error": dataset_results[-1].error_message
+                    "error": dataset_results[-1].get("error")
                     if dataset_results
                     else "All attempts failed",
                 }
             else:
-                logger.error(f"❌ Dataset {dataset_name} failed, stopping")
+                logger.error(
+                    f"❌ Dataset {dataset_name} failed, stopping batch training"
+                )
                 break
 
-        # Cleanup between datasets
+        # Clear memory between datasets
         if global_config.get("clear_memory_between_datasets", True):
             logger.info("🧹 Clearing memory...")
             clear_memory()
 
+        # Pause between datasets
         pause = global_config.get("pause_between_datasets", 2)
         if pause > 0:
             time.sleep(pause)
 
-    # Summary
+    # Calculate total time
     total_duration = time.time() - total_start
 
+    # ============================================================
+    # SUMMARY
+    # ============================================================
     logger.info("\n" + "=" * 80)
     logger.info("📊 BATCH TRAINING SUMMARY")
     logger.info("=" * 80)
 
     logger.info(f"\n✅ Successful: {len(successful_datasets)}/{len(selected_datasets)}")
     for ds in successful_datasets:
-        res = results[ds]
+        config = results[ds].get("best_config", {})
         logger.info(
-            f"  • {ds}: {res['best_model']} (val_loss={res.get('best_val_loss', 'N/A')})"
+            f"  • {ds}: {config.get('model', 'unknown')} (batch_size={config.get('batch_size', '?')})"
         )
 
     if failed_datasets:
         logger.info(f"\n❌ Failed: {len(failed_datasets)}/{len(selected_datasets)}")
         for ds in failed_datasets:
-            logger.info(f"  • {ds}")
+            err = results[ds].get("error", "Unknown")
+            logger.info(f"  • {ds}: {str(err)[:100]}")
 
     logger.info(f"\n⏱ Total time: {total_duration / 60:.1f} minutes")
 
-    # Save summary
+    # Generate summary data
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     summary_data = {
         "timestamp": timestamp,
@@ -785,6 +701,7 @@ def run_batch_training(
         "errors": errors,
     }
 
+    # Save summary
     summary_dir = Path("logs/batch")
     summary_dir.mkdir(parents=True, exist_ok=True)
     summary_file = summary_dir / f"batch_summary_{timestamp}.json"
@@ -1535,15 +1452,38 @@ def run_auto_batch_training(
 )
 @click.option("--datasets", "-d", multiple=True, help="Datasets to train")
 @click.option("--list-datasets", is_flag=True, help="List available datasets")
+# ============================================================
+# CONFIGURATION MODE SELECTION
+# ============================================================
 @click.option(
-    "--auto-config", "-a", is_flag=True, default=True, help="Auto-detect optimal config"
+    "--auto-config",
+    "-a",
+    is_flag=True,
+    help="Auto-detect optimal config (batch_size, cache_size, memory_limit)",
 )
-@click.option("--no-auto-config", is_flag=True, help="Use manual config")
+@click.option(
+    "--manual-config",
+    "-m",
+    is_flag=True,
+    help="Use manual config from batch_config.yaml (default)",
+)
+# CLI overrides (only work in manual mode)
+@click.option(
+    "--batch-size", "-b", type=int, help="Override batch size (manual mode only)"
+)
+@click.option("--cache-size", type=int, help="Override cache size (manual mode only)")
+@click.option(
+    "--memory-limit",
+    "-ml",
+    type=float,
+    help="Override memory limit in GB (manual mode only)",
+)
 @click.option("--epochs", "-e", type=int, help="Override epochs")
 @click.option("--device", "-dev", help="Override device")
 @click.option("--log-memory", "-lm", is_flag=True, help="Enable memory logging")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.option("--log-level", "-ll", help="Override log level")
+@click.option("--preprocess", "-p", is_flag=True, help="Force preprocessing")
 def main(
     config: str,
     datasets: tuple[str, ...],
@@ -1560,7 +1500,7 @@ def main(
     log_level: str | None,
     preprocess: bool,
 ):
-    """Run batch training with in-process execution."""
+    """Run batch training with auto or manual configuration."""
 
     if list_datasets:
         print("\n📊 Available datasets:")
@@ -1569,9 +1509,12 @@ def main(
         return
 
     # Determine config mode
-    use_auto = auto_config and not no_auto_config
-    mode = "auto" if use_auto else "manual"
-    print(f"\n🤖 Mode: {mode.upper()}")
+    if auto_config:
+        mode = "auto"
+        print("\n🤖 AUTO-CONFIG MODE: Script will auto-detect optimal settings")
+    else:
+        mode = "manual"
+        print("\n🔧 MANUAL-CONFIG MODE: Using config from batch_config.yaml")
 
     # Override args
     override_args: dict[str, Any] = {}
@@ -1585,15 +1528,34 @@ def main(
         override_args["verbose"] = True
     if log_level is not None:
         override_args["log_level"] = log_level
+    if preprocess:
+        override_args["preprocess"] = True
+
+    # Manual mode overrides
+    if mode == "manual":
+        if batch_size is not None:
+            override_args["batch_size"] = batch_size
+        if cache_size is not None:
+            override_args["cache_size"] = cache_size
+        if memory_limit is not None:
+            override_args["memory_limit_gb"] = memory_limit
 
     selected_datasets = list(datasets) if datasets else None
 
-    run_batch_training(
-        config_file=config,
-        selected_datasets=selected_datasets,
-        override_args=override_args if override_args else None,
-        use_auto_config=use_auto,
-    )
+    if mode == "auto":
+        # Use auto-config mode
+        run_auto_batch_training(
+            config_file=config,
+            selected_datasets=selected_datasets,
+            override_args=override_args if override_args else None,
+        )
+    else:
+        # Use manual config mode (existing behavior)
+        run_batch_training(
+            config_file=config,
+            selected_datasets=selected_datasets,
+            override_args=override_args if override_args else None,
+        )
 
 
 if __name__ == "__main__":

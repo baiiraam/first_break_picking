@@ -6,81 +6,19 @@ Supports:
 - Model registry with versioning and aliases
 - Checkpoint tracking with step parameter
 - Search and comparison of logged models
-- Run continuity for resuming training
 """
 
-# os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
+import os
+
+os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
 import hashlib
 import json
-import os
-from collections.abc import Generator
-
-# Add this after the existing imports
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 import mlflow
 import mlflow.pytorch
 from loguru import logger
-
-
-@contextmanager
-def mlflow_tracking_context(
-    config: Any,
-    run_name: str | None = None,
-    tags: dict[str, str] | None = None,
-) -> Generator[Any, None, None]:
-    """
-    Context manager for MLflow runs with automatic config logging.
-
-    Usage:
-        with mlflow_tracking_context(config) as run:
-            # Training code here
-            mlflow.log_metric("train_loss", loss)
-
-    Args:
-        config: Configuration object with to_dict() method
-        run_name: Optional run name (auto-generated if not provided)
-        tags: Optional tags for the run
-
-    Yields:
-        The MLflow run object
-    """
-    # Generate run name if not provided
-    if run_name is None:
-        config_hash = getattr(config, "get_config_hash", lambda: "default")()
-        dataset_name = getattr(config, "dataset_name", "unknown")
-        run_name = f"{dataset_name}-{config_hash}"
-
-    # Start run
-    with mlflow.start_run(run_name=run_name) as run:
-        # Log config
-        if hasattr(config, "to_dict"):
-            mlflow.log_params(config.to_dict())
-
-        # Log tags
-        if tags:
-            mlflow.set_tags(tags)
-
-        # Add default tags
-        mlflow.set_tag("run_type", "training")
-        if hasattr(config, "dataset_name"):
-            mlflow.set_tag("dataset", config.dataset_name)
-        if hasattr(config, "loss_function"):
-            mlflow.set_tag("loss_function", config.loss_function)
-        if hasattr(config, "device"):
-            mlflow.set_tag("device", config.device)
-
-        try:
-            yield run
-            mlflow.set_tag("status", "SUCCESS")
-        except Exception as e:
-            mlflow.set_tag("status", "FAILED")
-            mlflow.log_param("error_message", str(e))
-            raise
-        finally:
-            mlflow.set_tag("end_time", datetime.now(timezone.utc).isoformat())
 
 
 class MLflowManager:
@@ -209,56 +147,10 @@ class MLflowManager:
 
         # Add timestamp tag
         mlflow.set_tag("start_time", datetime.now(timezone.utc).isoformat())
-        mlflow.set_tag("run_type", "new")
 
         logger.info(f"MLflow run started: {run_name} (ID: {self.run_id})")
         assert self.run_id is not None
         return self.run_id
-
-    def set_run(self, run_id: str):
-        """
-        Set the current run to an existing run ID for continuation.
-
-        Args:
-            run_id: The MLflow run ID to continue
-        """
-        try:
-            # Get the run to verify it exists
-            run = self.client.get_run(run_id)
-            self.run_id = run_id
-            self.current_run = run
-
-            # Set the active run context
-            mlflow.start_run(
-                run_id=run_id,
-                run_name=run.data.tags.get("mlflow.runName", "continued_run"),
-            )
-
-            # Update tags to indicate this is a resumed run
-            mlflow.set_tag("run_type", "resumed")
-            mlflow.set_tag("resume_time", datetime.now(timezone.utc).isoformat())
-
-            # Get existing run name and update it
-            existing_name = run.data.tags.get("mlflow.runName", "")
-            if existing_name and not existing_name.endswith("(resumed)"):
-                mlflow.set_tag("mlflow.runName", f"{existing_name} (resumed)")
-
-            logger.info(f"✅ Continued MLflow run: {run_id}")
-            logger.info(
-                f"   Run name: {run.data.tags.get('mlflow.runName', 'unknown')}"
-            )
-            logger.info(f"   Existing tags: {run.data.tags}")
-
-        except Exception as e:
-            logger.error(f"Failed to set MLflow run to {run_id}: {e}")
-            raise
-
-    def set_tag(self, key: str, value: str):
-        """Set a tag on the current run."""
-        if self.current_run:
-            mlflow.set_tag(key, value)
-        else:
-            logger.warning("No active run to set tag on")
 
     def log_metrics(self, metrics: dict[str, float], step: int):
         """Log metrics to MLflow."""
@@ -433,6 +325,20 @@ class MLflowManager:
 
         Returns:
             List of model objects or pandas DataFrame
+
+        Examples:
+            # Find best models for Halfmile dataset
+            best_models = mlflow_manager.search_models(
+                filter_string="params.dataset = 'Halfmile'",
+                order_by=[{"field_name": "metrics.val_iou", "ascending": False}],
+                max_results=5,
+            )
+
+            # Find models with high class 2 IoU
+            best_strip_models = mlflow_manager.search_models(
+                filter_string="metrics.class_2_iou > 0.2",
+                order_by=[{"field_name": "metrics.class_2_iou", "ascending": False}],
+            )
         """
         try:
             results = mlflow.search_logged_models(
@@ -448,7 +354,15 @@ class MLflowManager:
             return []
 
     def load_model_from_uri(self, model_uri: str):
-        """Load a model from a URI."""
+        """
+        Load a model from a URI.
+
+        Args:
+            model_uri: URI in format "models:/{model_id}" or "models:/{name}/{version}"
+
+        Returns:
+            Loaded model
+        """
         try:
             model = mlflow.pyfunc.load_model(model_uri)
             logger.info(f"Loaded model from {model_uri}")
@@ -489,7 +403,16 @@ class MLflowManager:
         run_ids: list[str],
         metric_names: list[str],
     ) -> dict[str, dict[str, float]]:
-        """Compare metrics across multiple runs."""
+        """
+        Compare metrics across multiple runs.
+
+        Args:
+            run_ids: List of run IDs to compare
+            metric_names: List of metric names to compare
+
+        Returns:
+            Dict mapping run_id to {metric_name: value}
+        """
         results = {}
         for run_id in run_ids:
             run_data = self.get_run_metrics(run_id)
@@ -512,69 +435,6 @@ class MLflowManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end_run()
-
-    def prune_old_models(
-        self,
-        registered_model_name: str,
-        keep_last_n: int = 3,
-        stage: str = "Archived",
-    ):
-        """
-        Transition older model versions to archived or delete them.
-        Keeps only the best N models based on validation metrics.
-
-        Args:
-            registered_model_name: Name of the registered model
-            keep_last_n: Number of best versions to keep
-            stage: Stage to transition old models to ("Archived", "Staging", "None")
-        """
-        try:
-            # Get all versions
-            versions = self.client.search_model_versions(
-                filter_string=f"name='{registered_model_name}'"
-            )
-
-            if len(versions) <= keep_last_n:
-                logger.debug(
-                    f"[MLflow] {registered_model_name}: {len(versions)} versions, "
-                    f"no pruning needed (keep_last_n={keep_last_n})"
-                )
-                return
-
-            # Sort by version number descending
-            sorted_versions = sorted(
-                versions, key=lambda v: int(v.version), reverse=True
-            )
-
-            # Archive old versions
-            archived_count = 0
-            for old_v in sorted_versions[keep_last_n:]:
-                try:
-                    self.client.transition_model_version_stage(
-                        name=registered_model_name,
-                        version=old_v.version,
-                        stage=stage,
-                    )
-                    logger.info(
-                        f"[MLflow] Archived {registered_model_name} version {old_v.version} "
-                        f"(kept {keep_last_n} best versions)"
-                    )
-                    archived_count += 1
-                except Exception as e:
-                    logger.warning(
-                        f"[MLflow] Failed to archive {registered_model_name} "
-                        f"version {old_v.version}: {e}"
-                    )
-
-            if archived_count > 0:
-                logger.info(
-                    f"[MLflow] Pruned {archived_count} old versions of {registered_model_name}"
-                )
-
-        except Exception as e:
-            logger.warning(
-                f"[MLflow] Failed to prune models for {registered_model_name}: {e}"
-            )
 
 
 # ============================================================

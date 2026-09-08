@@ -1,5 +1,5 @@
 """
-HDF5 dataset for lazy loading with multiprocessing worker safety, buffer validation, and explicit resource management.
+HDF5 dataset for lazy loading with level-based telemetry.
 """
 
 from typing import Any
@@ -8,13 +8,16 @@ import h5py
 import numpy as np
 import torch
 from loguru import logger
-from torch.utils.data import Dataset, get_worker_info
+from torch.utils.data import Dataset
 
 
 class HDF5SeismicDataset(Dataset):
     """
-    Memory-efficient dataset that loads from HDF5 on-the-fly, safe for multiprocessing workers.
-    Uses default HDF5 driver to avoid memory duplication across workers.
+    Memory-efficient dataset that loads from HDF5 on-the-fly.
+
+    Logging:
+        - INFO: Dataset init
+        - DEBUG: Every __getitem__ call with shot_id and slice info
     """
 
     def __init__(
@@ -45,39 +48,8 @@ class HDF5SeismicDataset(Dataset):
     def __len__(self) -> int:
         return len(self.shot_ids)
 
-    def _register_cleanup(self):
-        """Register cleanup function for worker termination."""
-        if not self._cleanup_registered:
-            atexit.register(self._close)
-            self._cleanup_registered = True
-            logger.debug(f"[HDF5] Registered cleanup for worker {self._worker_id}")
-
-    def _ensure_file_open(self):
-        """
-        Ensure HDF5 file handle is open safely for the current process/worker.
-        ✅ Uses default driver to avoid memory duplication across multiprocessing workers.
-        ✅ Removed swmr=True for static datasets (reduces I/O overhead).
-        """
-        if self._file is None:
-            worker_info = get_worker_info()
-            self._worker_id = worker_info.id if worker_info is not None else "main"
-            logger.debug(
-                f"[HDF5] Opening HDF5 file for worker/process {self._worker_id}: {self.hdf5_path}"
-            )
-
-            # ✅ Use default driver (streaming) to avoid memory duplication across workers
-            # The 'core' driver would load the entire file into memory for each worker
-            # which causes memory blowup with num_workers > 0
-            self._file = h5py.File(self.hdf5_path, "r")
-            self._group = self._file["TRACE_DATA"]["DEFAULT"]
-
-            # Register cleanup
-            self._register_cleanup()
-
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Load a single shot from HDF5 using worker-safe handles and buffer reuse."""
-        self._ensure_file_open()
-
+        """Load a single shot from HDF5."""
         shot_id = self.shot_ids[idx]
         start_idx, end_idx = self.shot_indices[shot_id]
 
@@ -91,30 +63,29 @@ class HDF5SeismicDataset(Dataset):
             self.group = self.file["TRACE_DATA"]["DEFAULT"]
         assert self.group is not None, "HDF5 group is not initialized"
         # Read data
-        shot_data = self._group["data_array"][start_idx:end_idx, :]
-        shot_picks = self._group["SPARE1"][start_idx:end_idx, 0]
+        shot_data = self.group["data_array"][start_idx:end_idx, :]
+        shot_picks = self.group["SPARE1"][start_idx:end_idx, 0]
 
+        # Pad/crop
         actual_traces = shot_data.shape[0]
-
-        if self._needs_padding[shot_id]:
-            self._data_buffer.fill(0)
-            self._picks_buffer.fill(0)
-            self._data_buffer[:actual_traces, :] = shot_data
-            self._picks_buffer[:actual_traces] = shot_picks
-            shot_data = self._data_buffer[: self.target_traces, :].copy()
-            shot_picks = self._picks_buffer[: self.target_traces].copy()
-        elif self._needs_cropping[shot_id]:
-            shot_data = shot_data[: self.target_traces, :].copy()
-            shot_picks = shot_picks[: self.target_traces].copy()
-        else:
-            shot_data = shot_data.copy()
-            shot_picks = shot_picks.copy()
+        if actual_traces < self.target_traces:
+            data_padded = np.zeros(
+                (self.target_traces, self.n_samples), dtype=np.float32
+            )
+            picks_padded = np.zeros(self.target_traces, dtype=np.float32)
+            data_padded[:actual_traces, :] = shot_data
+            picks_padded[:actual_traces] = shot_picks
+            shot_data = data_padded
+            shot_picks = picks_padded
+        elif actual_traces > self.target_traces:
+            shot_data = shot_data[: self.target_traces, :]
+            shot_picks = shot_picks[: self.target_traces]
 
         mask = self._create_mask(shot_picks)
 
         return (
-            torch.from_numpy(shot_data).float().unsqueeze(0).contiguous(),
-            torch.from_numpy(mask).long().contiguous(),
+            torch.from_numpy(shot_data).float().unsqueeze(0),
+            torch.from_numpy(mask).long(),
         )
 
     def _create_mask(self, picks: np.ndarray) -> np.ndarray:
@@ -132,19 +103,15 @@ class HDF5SeismicDataset(Dataset):
 
         return mask
 
-    def _close(self):
-        """Internal cleanup method."""
-        if self._file is not None:
-            logger.debug(
-                f"[HDF5] Closing file for worker {self._worker_id}: {self.hdf5_path}"
-            )
-            self._file.close()
-            self._file = None
-            self._group = None
-
     def close(self):
-        """Explicit cleanup method - call when done."""
-        self._close()
+        if self.file is not None:
+            logger.debug(f"[HDF5] Closing file: {self.hdf5_path}")
+            self.file.close()
+            self.file = None
+            self.group = None
+
+    def __del__(self):
+        self.close()
 
     def get_shot_id(self, idx: int) -> int:
         return int(self.shot_ids[idx])

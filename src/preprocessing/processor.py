@@ -1,5 +1,5 @@
 """
-Shot processing logic for seismic data with thread-safe buffer management.
+Shot processing logic for seismic data with validation and logging.
 """
 
 from typing import Any
@@ -9,18 +9,13 @@ from loguru import logger
 
 
 class ShotProcessor:
-    """
-    Process individual shots with vectorized operations and validation.
-    Thread-safe: each thread/worker should use its own instance.
-    """
+    """Process individual shots with vectorized operations and validation."""
 
     def __init__(
         self,
         target_traces: int = 1578,
         n_samples: int = 751,
         strip_width: int = 8,
-        sample_rate_ms: float = 2.0,
-        picks_unit: str = "auto",  # ✅ NEW: "auto", "ms", "samples"
         log_level: str = "INFO",
         ignore_index: int = -1,  # 🆕 Add parameter
         sampling_interval_ms: float = 2.0,  # 🆕 Add parameter
@@ -29,8 +24,6 @@ class ShotProcessor:
         self.n_samples = n_samples
         self.strip_width = strip_width
         self.half_width = strip_width // 2
-        self.sample_rate_ms = sample_rate_ms
-        self.picks_unit = picks_unit
         self.log_level = log_level
         self.ignore_index = ignore_index
         self.stats: list[dict[str, Any]] = []
@@ -53,15 +46,6 @@ class ShotProcessor:
                 self.sampling_interval_ms = 2.0
         else:
             self.sampling_interval_ms = sampling_interval_ms
-
-    def _get_buffers(self):
-        """Get or create thread-local buffers."""
-        if not hasattr(self._local, "data_buffer"):
-            self._local.data_buffer = np.zeros(
-                (self.target_traces, self.n_samples), dtype=np.float32
-            )
-            self._local.picks_buffer = np.zeros(self.target_traces, dtype=np.float32)
-        return self._local.data_buffer, self._local.picks_buffer
 
     def validate_picks(self, picks: np.ndarray) -> tuple[np.ndarray, dict]:
         """
@@ -103,6 +87,7 @@ class ShotProcessor:
             stats["mean_pick"] = None
             stats["median_pick"] = None
 
+        # Warn if many invalid picks
         if invalid_count > total * 0.1:
             logger.warning(
                 f"High invalid picks: {invalid_count}/{total} ({invalid_count / total:.1%})"
@@ -112,13 +97,9 @@ class ShotProcessor:
 
     # In src/preprocessing/processor.py - update create_mask_vectorized
 
-    def _convert_picks(self, picks: np.ndarray) -> np.ndarray:
+    def create_mask_vectorized(self, picks: np.ndarray) -> np.ndarray:
         """
-        Convert picks from milliseconds to samples if needed.
-        """
-        # ✅ Configurable unit detection
-        if self.picks_unit == "samples":
-            return picks
+        Create 3-class segmentation mask using vectorized operations.
 
         Class mapping:
             -1: Unlabeled / IGNORE (not used in training)
@@ -129,7 +110,8 @@ class ShotProcessor:
         n_traces = len(picks)
         mask = np.zeros((n_traces, self.n_samples), dtype=np.int64)
 
-        samples = self._samples.reshape(1, -1)
+        # Create sample index grid using broadcasting
+        samples = np.arange(self.n_samples).reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
         # ✅ FIX: Invalid if pick <= 0 OR pick >= n_samples
@@ -156,11 +138,13 @@ class ShotProcessor:
         self, mask: np.ndarray, picks: np.ndarray, shot_id: int | None = None
     ) -> bool:
         """Validate mask quality."""
+        # Check that strip exists
         strip_count = np.sum(mask == 2)
         if strip_count == 0:
             logger.warning(f"Shot {shot_id}: No strip (class 2) found in mask!")
             return False
 
+        # Check strip is near the pick (within ±10 samples)
         issues = 0
         for i, pick in enumerate(picks):
             if pick > 0 and pick < self.n_samples:
@@ -169,7 +153,7 @@ class ShotProcessor:
                     strip_center = np.median(strip_indices)
                     if abs(strip_center - pick) > 10:
                         issues += 1
-                        if issues <= 3:
+                        if issues <= 3:  # Log only first 3 issues
                             logger.debug(
                                 f"Shot {shot_id}, trace {i}: strip center {strip_center:.0f} far from pick {pick:.0f}"
                             )
@@ -213,46 +197,44 @@ class ShotProcessor:
         shot_id: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, dict]:
         """
-        Process a single shot: convert units, validate, pad/crop, create mask.
-        Thread-safe: uses thread-local buffers.
+        Process a single shot: validate, pad/crop, create mask.
+
+        Returns:
+            processed_data: (target_traces, n_samples) float32
+            processed_mask: (target_traces, n_samples) int64
+            stats: Dictionary of processing statistics
         """
         actual_traces = shot_data.shape[0]
 
         if self.log_level == "DEBUG" and shot_id is not None:
             logger.debug(f"Processing shot {shot_id}: {actual_traces} traces")
 
-        # Convert picks (configurable unit detection)
-        shot_picks = self._convert_picks(shot_picks)
-
-        # Validate picks
-        cleaned_picks, pick_stats = self.validate_picks(shot_picks)
-
-        # Get thread-local buffers
-        data_buffer, picks_buffer = self._get_buffers()
+        # Validate and clean picks
+        cleaned_picks, _ = self.validate_picks(shot_picks)
 
         # Pad or crop to target_traces
         if actual_traces < self.target_traces:
-            data_buffer.fill(0)
-            picks_buffer.fill(0)
-            data_buffer[:actual_traces, :] = shot_data
-            picks_buffer[:actual_traces] = cleaned_picks
-            shot_data = data_buffer[: self.target_traces, :].copy()
-            shot_picks = picks_buffer[: self.target_traces].copy()
-            if self.log_level == "DEBUG":
+            data_padded = np.zeros(
+                (self.target_traces, self.n_samples), dtype=np.float32
+            )
+            picks_padded = np.zeros(self.target_traces, dtype=np.float32)
+            data_padded[:actual_traces, :] = shot_data
+            picks_padded[:actual_traces] = cleaned_picks
+            shot_data = data_padded
+            shot_picks = picks_padded
+            if self.log_level == "INFO":
                 logger.debug(
                     f"Shot {shot_id}: padded {actual_traces} → {self.target_traces} traces"
                 )
         elif actual_traces > self.target_traces:
-            shot_data = shot_data[: self.target_traces, :].copy()
-            shot_picks = cleaned_picks[: self.target_traces].copy()
-            if self.log_level == "DEBUG":
+            shot_data = shot_data[: self.target_traces, :]
+            shot_picks = cleaned_picks[: self.target_traces]
+            if self.log_level == "INFO":
                 logger.debug(
                     f"Shot {shot_id}: cropped {actual_traces} → {self.target_traces} traces"
                 )
         else:
-            # ✅ Make copies to avoid mutating input arrays
-            shot_data = shot_data.copy()
-            shot_picks = cleaned_picks.copy()
+            shot_picks = cleaned_picks
 
         # Create mask
         mask = self.create_mask_vectorized(shot_picks)
@@ -310,10 +292,3 @@ class ShotProcessor:
     def reset_stats(self):
         """Reset accumulated statistics."""
         self.stats = []
-
-    def set_unit_thresholds(self, low: int = 300, high: int = 2000):
-        """
-        Set thresholds for auto-detecting ms vs samples.
-        """
-        self._ms_threshold_low = low
-        self._ms_threshold_high = high
