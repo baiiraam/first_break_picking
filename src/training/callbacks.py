@@ -5,6 +5,7 @@ Training callbacks for Seismic FBP with full state management.
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import torch
 from loguru import logger
@@ -59,7 +60,7 @@ class EarlyStoppingCallback(Callback):
         self.monitor = monitor
         self.verbose = verbose
 
-        self.best_value = None
+        self.best_value: float | None = None
         self.counter = 0
         self.best_epoch = 0
         self.should_stop = False
@@ -143,9 +144,8 @@ class ModelCheckpointCallback(Callback):
         self.save_scheduler = save_scheduler
         self.verbose = verbose
 
-        self.best_value = None
-        self.best_path = None
-        self.best_epoch = 0
+        self.best_value: float | None = None
+        self.best_path: Path | None = None
 
     def on_epoch_start(self, epoch: int, **kwargs):
         pass
@@ -154,10 +154,10 @@ class ModelCheckpointCallback(Callback):
         self,
         epoch: int,
         metrics: dict[str, float],
-        model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer | None = None,
-        scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
-        **kwargs,
+        model: Any = None,
+        optimizer: Any = None,
+        scheduler: Any = None,
+        **kwargs: Any,
     ):
         # Save checkpoint every N epochs
         if (epoch + 1) % self.save_every == 0:
@@ -166,16 +166,13 @@ class ModelCheckpointCallback(Callback):
         # Save best model
         if self.save_best:
             current_value = metrics.get(self.monitor)
-            if current_value is not None:
-                is_better = False
-                if (
-                    self.best_value is None
-                    or self.mode == "min"
-                    and current_value < self.best_value
-                    or self.mode == "max"
-                    and current_value > self.best_value
-                ):
-                    is_better = True
+            if current_value is not None and (
+                self.best_value is None
+                or (self.mode == "min" and current_value < self.best_value)
+                or (self.mode == "max" and current_value > self.best_value)
+            ):
+                self.best_value = current_value
+                self._save_best(model, epoch + 1, metrics)
 
                 if is_better:
                     self.best_value = current_value
@@ -351,33 +348,22 @@ class LoggingCallback(Callback):
         self.log_gradients = log_gradients
         self.log_weights = log_weights
         self.verbose = verbose
-        self.batch_losses = []
-        self.epoch_metrics = {}
-
-        # ✅ Set matplotlib to non-interactive backend to avoid GUI issues
-        # Only import when needed
-        # self._matplotlib_imported = False
-        # self._plt = None
-
-    # def _get_plt(self):
-    #     """Lazy import matplotlib with proper backend."""
-    #     if not self._matplotlib_imported:
-    #         import matplotlib
-
-    #         matplotlib.use("Agg")  # ✅ Non-interactive backend
-    #         import matplotlib.pyplot as plt
-
-    #         self._plt = plt
-    #         self._matplotlib_imported = True
-    #     return self._plt
+        self.batch_losses: list[float] = []
 
     def on_epoch_start(self, epoch: int, **kwargs):
         """Reset batch tracking at start of epoch."""
         self.batch_losses = []
         self.epoch_metrics = {}
 
-    def on_epoch_end(self, epoch: int, metrics: dict[str, float], **kwargs):
-        """Log all metrics at epoch end."""
+    def on_epoch_end(
+        self,
+        epoch: int,
+        metrics: dict[str, float],
+        model: Any = None,
+        optimizer: Any = None,
+        scheduler: Any = None,
+        **kwargs: Any,
+    ):
         # Log to TensorBoard
         if self.writer is not None:  # ✅ Check for None explicitly
             for key, value in metrics.items():

@@ -2,7 +2,7 @@
 HDF5 dataset for lazy loading with multiprocessing worker safety, buffer validation, and explicit resource management.
 """
 
-import atexit
+from typing import Any
 
 import h5py
 import numpy as np
@@ -21,7 +21,7 @@ class HDF5SeismicDataset(Dataset):
         self,
         hdf5_path: str,
         shot_indices: dict[int, tuple[int, int]],
-        shot_ids: list,
+        shot_ids: list[int],
         target_traces: int = 1578,
         n_samples: int = 751,
         strip_width: int = 8,
@@ -34,29 +34,8 @@ class HDF5SeismicDataset(Dataset):
         self.strip_width = strip_width
         self.half_width = strip_width // 2
 
-        # Worker-isolated file handles and buffer tracking
-        self._file = None
-        self._group = None
-
-        # Pre-validate buffer shape in constructor (not per __getitem__)
-        self._data_buffer = np.zeros(
-            (self.target_traces, self.n_samples), dtype=np.float32
-        )
-        self._picks_buffer = np.zeros(self.target_traces, dtype=np.float32)
-
-        # Pre-compute shot sizes for faster decisions
-        self._shot_sizes = {}
-        self._needs_padding = {}
-        self._needs_cropping = {}
-        for shot_id, (start, end) in self.shot_indices.items():
-            size = end - start
-            self._shot_sizes[shot_id] = size
-            self._needs_padding[shot_id] = size < self.target_traces
-            self._needs_cropping[shot_id] = size > self.target_traces
-
-        # Track worker ID for debugging
-        self._worker_id = None
-        self._cleanup_registered = False
+        self.file: h5py.File | None = None
+        self.group: h5py.Dataset | h5py.Group | Any = None
 
         logger.info(f"[HDF5] INIT: {len(self)} shots, file={hdf5_path}")
         logger.debug(
@@ -106,6 +85,11 @@ class HDF5SeismicDataset(Dataset):
             f"[HDF5] GET idx={idx} → shot={shot_id}, slice={start_idx}:{end_idx}"
         )
 
+        if self.file is None:
+            logger.debug(f"[HDF5] Opening HDF5 file: {self.hdf5_path}")
+            self.file = h5py.File(self.hdf5_path, "r", swmr=True)
+            self.group = self.file["TRACE_DATA"]["DEFAULT"]
+        assert self.group is not None, "HDF5 group is not initialized"
         # Read data
         shot_data = self._group["data_array"][start_idx:end_idx, :]
         shot_picks = self._group["SPARE1"][start_idx:end_idx, 0]
@@ -163,4 +147,4 @@ class HDF5SeismicDataset(Dataset):
         self._close()
 
     def get_shot_id(self, idx: int) -> int:
-        return self.shot_ids[idx]
+        return int(self.shot_ids[idx])

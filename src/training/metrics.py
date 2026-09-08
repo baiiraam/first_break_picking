@@ -59,9 +59,9 @@ class SegmentationMetrics:
 
         self.total_pixels += len(preds)
 
-    def compute(self) -> dict[str, float]:
-        """Compute all metrics (moves to CPU once per epoch)."""
-        cm = self.confusion_matrix.cpu().numpy()
+    def compute(self) -> dict[str, float | list[float]]:
+        """Compute all metrics."""
+        cm = self.confusion_matrix
 
         accuracy = np.trace(cm) / np.sum(cm) if np.sum(cm) > 0 else 0
 
@@ -158,7 +158,7 @@ def compute_gradient_norm(model: nn.Module) -> float:
         if p.grad is not None:
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
-    return total_norm**0.5
+    return float(total_norm**0.5)
 
 
 def compute_weight_norm(model: nn.Module) -> float:
@@ -166,7 +166,7 @@ def compute_weight_norm(model: nn.Module) -> float:
     for p in model.parameters():
         param_norm = p.data.norm(2)
         total_norm += param_norm.item() ** 2
-    return total_norm**0.5
+    return float(total_norm**0.5)
 
 
 def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:

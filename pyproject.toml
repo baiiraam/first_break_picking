@@ -22,3 +22,12 @@ dependencies = [
     "pyyaml>=6.0",
     "scikit-learn>=1.2.0",
 ]
+
+[tool.mypy]
+explicit_package_bases = true
+namespace_packages = true
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Start with false, increase strictness gradually
+ignore_missing_imports = true  # For third-party libraries without stubs

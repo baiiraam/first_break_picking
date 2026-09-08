@@ -47,12 +47,11 @@ class ChunkedSeismicDataset(Dataset):
         if not self.chunks:
             raise ValueError(f"No chunks found for split '{split}'")
 
-        # ✅ Build chunk order with optional shuffling
-        self._chunk_order = list(range(len(self.chunks)))
-        if shuffle_chunks and split == "train":
-            rng = np.random.default_rng(seed)
-            rng.shuffle(self._chunk_order)
-            logger.debug(f"[Dataset] Shuffled chunk order: {self._chunk_order[:5]}...")
+        # Build global index: global_idx -> (chunk_idx, local_idx)
+        self.global_index: list[int] = []
+        self.chunk_indices: list[int] = []
+        self.chunk_offsets: list[int] = []
+        self.shot_ids: list[int] = []
 
         # Build fast NumPy arrays for global indexing using shuffled order
         self.chunk_indices = np.array(self._build_chunk_indices(), dtype=np.int64)
@@ -64,6 +63,7 @@ class ChunkedSeismicDataset(Dataset):
 
         # Cache: chunk_idx -> (data_tensor, mask_tensor)
         self.cache = LRUCache(max_size=cache_size)
+        self.cache_order: list[int] = []  # LRU order for tracking
 
         logger.info(
             f"[Dataset] Ready: {len(self)} samples, {len(self.chunks)} chunks, "
@@ -158,7 +158,10 @@ class ChunkedSeismicDataset(Dataset):
         else:
             logger.debug(f"[Dataset] CHUNK {actual_chunk_idx} in cache (hit)")
 
-        cached_item = self.cache.get(actual_chunk_idx)
+        # ✅ FIX: Use .get() method
+        cached_item = self.cache.get(chunk_idx)
+        if cached_item is None:
+            raise RuntimeError(f"Chunk {chunk_idx} not found in cache after load.")
         data = cached_item["data"][local_idx]
         mask = cached_item["mask"][local_idx]
 
@@ -245,19 +248,16 @@ class ChunkedDataManager:
         self.shuffle_chunks = shuffle_chunks
         self.seed = seed
 
-        logger.debug(
-            f"[Manager] INIT cache_size={cache_size} | shuffle_chunks={shuffle_chunks}"
-        )
-        self._datasets = {}
+        logger.debug(f"[Manager] INIT cache_size={cache_size}")
+        self._datasets: dict[str, ChunkedSeismicDataset] = {}
 
     def get_dataset(self, split: str) -> ChunkedSeismicDataset:
-        """Get dataset for a specific split."""
         logger.debug(f"[Manager] GET_DATASET split={split}")
 
         if split not in self._datasets:
             logger.debug(f"[Manager] Creating new dataset for split={split}")
             self._datasets[split] = ChunkedSeismicDataset(
-                self.chunk_dir,
+                str(self.chunk_dir),  # Convert Path to str to fix arg-type error
                 self.manifest,
                 split=split,
                 cache_size=self.cache_size,

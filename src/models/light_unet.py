@@ -2,6 +2,8 @@
 Lightweight U-Net variants for seismic segmentation.
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -152,7 +154,7 @@ class LightUNet(nn.Module):
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
 
-        return out.contiguous()
+        return cast(torch.Tensor, out.contiguous())
 
 
 class NanoUNetLight(nn.Module):

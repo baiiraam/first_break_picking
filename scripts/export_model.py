@@ -76,15 +76,28 @@ def main(
 
     logger.info("\nLoading model...")
 
-    # ✅ Use unified loader
+    model_obj: UNet | MPSLightUNet
+    if model_type == "unet":
+        model_obj = UNet(in_channels=1, out_channels=3)
+    elif model_type == "mpslight":
+        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
+    else:
+        logger.error(f"Unknown model type: {model_type}")
+        sys.exit(1)
+
+    # Load checkpoint
     try:
-        model_obj = load_model_from_checkpoint(
-            model_path=model,
-            model_type=model_type,
-            device=device_obj,
-        )
-        logger.info("✅ Model loaded successfully")
-    except Exception as e:
+        checkpoint = torch.load(model, map_location=device_obj)
+        if "model_state_dict" in checkpoint:
+            model_obj.load_state_dict(checkpoint["model_state_dict"])
+            logger.info(
+                f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}"
+            )
+            logger.info(f"  Val loss: {checkpoint.get('val_loss', 'N/A')}")
+        else:
+            model_obj.load_state_dict(checkpoint)
+            logger.info("Loaded model state dict")
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to load model: {e}")
         sys.exit(1)
 
@@ -111,7 +124,7 @@ def main(
             logger.info(
                 f"  File size: {scripted_path.stat().st_size / (1024 * 1024):.2f} MB"
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"  ❌ TorchScript export failed: {e}")
 
     # Export to ONNX
@@ -121,7 +134,7 @@ def main(
             onnx_path = output_dir / f"{model_type}_model.onnx"
             torch.onnx.export(
                 model_obj,
-                example_input,
+                (example_input,),
                 onnx_path,
                 input_names=["input"],
                 output_names=["output"],
@@ -137,17 +150,17 @@ def main(
 
             # Optional: Verify ONNX model
             try:
-                import onnx
+                import onnx as onnx_module
 
-                onnx_model = onnx.load(onnx_path)
-                onnx.checker.check_model(onnx_model)
+                onnx_model = onnx_module.load(onnx_path)
+                onnx_module.checker.check_model(onnx_model)
                 logger.info("  ✅ ONNX model verified")
             except ImportError:
                 logger.info("  ⚠️  ONNX library not installed, skipping verification")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"  ⚠️  ONNX verification failed: {e}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"  ❌ ONNX export failed: {e}")
 
     logger.info("\n" + "=" * 60)

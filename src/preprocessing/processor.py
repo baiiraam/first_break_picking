@@ -2,7 +2,7 @@
 Shot processing logic for seismic data with thread-safe buffer management.
 """
 
-import threading
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -22,6 +22,8 @@ class ShotProcessor:
         sample_rate_ms: float = 2.0,
         picks_unit: str = "auto",  # ✅ NEW: "auto", "ms", "samples"
         log_level: str = "INFO",
+        ignore_index: int = -1,  # 🆕 Add parameter
+        sampling_interval_ms: float = 2.0,  # 🆕 Add parameter
     ):
         self.target_traces = target_traces
         self.n_samples = n_samples
@@ -30,15 +32,27 @@ class ShotProcessor:
         self.sample_rate_ms = sample_rate_ms
         self.picks_unit = picks_unit
         self.log_level = log_level
+        self.ignore_index = ignore_index
+        self.stats: list[dict[str, Any]] = []
 
-        # ✅ Thread-local buffers for safety
-        self._local = threading.local()
-
-        # Pre-compute sample array for mask creation
-        self._samples = np.arange(n_samples, dtype=np.int64)
-
-        # Stats collection (not thread-safe, but each instance has its own)
-        self.stats = []
+        # 🆕 Auto-detect sampling interval if not provided
+        self.sampling_interval_ms: float
+        if sampling_interval_ms is None:
+            # Auto-detect based on n_samples (common datasets)
+            if n_samples == 751:
+                # Halfmile or Brunswick (1500ms recording)
+                self.sampling_interval_ms = 1500.0 / n_samples  # ~2.0ms
+            elif n_samples == 1501:
+                # Lalor (1500ms recording)
+                self.sampling_interval_ms = 1500.0 / n_samples  # ~1.0ms
+            elif n_samples == 1001:
+                # Sudbury (1000ms recording)
+                self.sampling_interval_ms = 1000.0 / n_samples  # ~1.0ms
+            else:
+                # Default: assume 2ms per sample
+                self.sampling_interval_ms = 2.0
+        else:
+            self.sampling_interval_ms = sampling_interval_ms
 
     def _get_buffers(self):
         """Get or create thread-local buffers."""
@@ -52,9 +66,21 @@ class ShotProcessor:
     def validate_picks(self, picks: np.ndarray) -> tuple[np.ndarray, dict]:
         """
         Validate and clean picks.
+        CONVERTS MILLISECONDS TO SAMPLES!
         """
         total = len(picks)
-        valid_mask = (picks > 0) & (picks < self.n_samples)
+
+        # 🆕 CONVERT FROM MILLISECONDS TO SAMPLES
+        picks_samples = picks / self.sampling_interval_ms
+
+        # Round to nearest sample
+        picks_samples = np.round(picks_samples).astype(np.float32)
+
+        # Clip to valid range [0, n_samples-1]
+        picks_samples = np.clip(picks_samples, 0, self.n_samples - 1)
+
+        # Count valid picks (between 0 and n_samples-1)
+        valid_mask = (picks_samples > 0) & (picks_samples < self.n_samples)
         valid_count = np.sum(valid_mask)
         invalid_count = total - valid_count
 
@@ -66,7 +92,7 @@ class ShotProcessor:
         }
 
         if valid_count > 0:
-            valid_picks = picks[valid_mask]
+            valid_picks = picks_samples[valid_mask]
             stats["min_pick"] = float(valid_picks.min())
             stats["max_pick"] = float(valid_picks.max())
             stats["mean_pick"] = float(valid_picks.mean())
@@ -82,8 +108,9 @@ class ShotProcessor:
                 f"High invalid picks: {invalid_count}/{total} ({invalid_count / total:.1%})"
             )
 
-        cleaned_picks = np.clip(picks, 0, self.n_samples - 1)
-        return cleaned_picks, stats
+        return picks_samples, stats
+
+    # In src/preprocessing/processor.py - update create_mask_vectorized
 
     def _convert_picks(self, picks: np.ndarray) -> np.ndarray:
         """
@@ -93,44 +120,35 @@ class ShotProcessor:
         if self.picks_unit == "samples":
             return picks
 
-        if self.picks_unit == "ms":
-            return picks / self.sample_rate_ms
-
-        # Auto-detect (default)
-        max_pick = picks.max() if len(picks) > 0 else 0
-
-        # ✅ Make threshold configurable via class attribute
-        ms_threshold_low = getattr(self, "_ms_threshold_low", 300)
-        ms_threshold_high = getattr(self, "_ms_threshold_high", 2000)
-
-        if ms_threshold_low < max_pick < ms_threshold_high:
-            # Convert ms to samples
-            converted = picks / self.sample_rate_ms
-            logger.debug(
-                f"Converted picks from ms to samples (max: {max_pick:.1f} ms → {max_pick / self.sample_rate_ms:.1f} samples)"
-            )
-            return converted
-
-        return picks
-
-    def create_mask_vectorized(self, picks: np.ndarray) -> np.ndarray:
-        """Create 3-class segmentation mask."""
+        Class mapping:
+            -1: Unlabeled / IGNORE (not used in training)
+            0: Before first break
+            2: Strip around first break
+            1: After first break
+        """
         n_traces = len(picks)
         mask = np.zeros((n_traces, self.n_samples), dtype=np.int64)
 
         samples = self._samples.reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
+        # ✅ FIX: Invalid if pick <= 0 OR pick >= n_samples
+        valid_mask = (picks > 0) & (picks < self.n_samples)  # NOT >=
+        valid_mask_2d = valid_mask.reshape(-1, 1)
+
+        # Vectorized conditions for labeled traces
         strip_mask = (samples >= picks_expanded - self.half_width) & (
             samples <= picks_expanded + self.half_width
         )
         after_mask = samples > picks_expanded + self.half_width
 
-        mask[strip_mask] = 2
-        mask[after_mask] = 1
+        # Apply to valid traces only
+        mask[valid_mask_2d & strip_mask] = 2
+        mask[valid_mask_2d & after_mask] = 1
 
+        # Invalid picks become ignore_index
         invalid = (picks <= 0) | (picks >= self.n_samples)
-        mask[invalid, :] = 0
+        mask[invalid, :] = self.ignore_index
 
         return mask
 
