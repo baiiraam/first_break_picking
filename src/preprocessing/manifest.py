@@ -4,6 +4,7 @@ Manifest generation for chunked datasets with checksums and versioning.
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -91,36 +92,38 @@ def generate_manifest(
 
 
 def save_manifest(manifest: dict[str, Any], path: Path):
-    """Save manifest to JSON file with checksum."""
+    """Save manifest to JSON file with checksum using atomic write."""
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save manifest without checksum first
-    with open(path, "w") as f:
+    # Write to temp file first
+    temp_path = path.with_suffix(".tmp")
+    with open(temp_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
     # Compute and update checksum
-    checksum = compute_checksum(path)
+    checksum = compute_checksum(temp_path)
     manifest["manifest_checksum"] = checksum
 
     # Re-save with checksum
-    with open(path, "w") as f:
+    with open(temp_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
+    # Atomic rename
+    os.replace(temp_path, path)
     logger.info(f"Manifest saved to {path} (checksum: {checksum})")
 
 
-def load_manifest(path: Path) -> dict[str, Any]:
-    """Load manifest from JSON file and verify checksum."""
+def load_manifest(path: Path, verify_checksum: bool = True) -> dict[str, Any]:
+    """Load manifest from JSON file with optional checksum verification."""
     if not path.exists():
         raise FileNotFoundError(f"Manifest not found: {path}")
 
     with open(path, "r") as f:
         manifest = json.load(f)
 
-    # Verify manifest checksum if present
-    if manifest.get("manifest_checksum"):
+    # 🆕 Optional verification
+    if verify_checksum and manifest.get("manifest_checksum"):
         stored_checksum = manifest["manifest_checksum"]
-        # Remove checksum before computing
         manifest_copy = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
         temp_path = path.with_suffix(".tmp")
         with open(temp_path, "w") as f:

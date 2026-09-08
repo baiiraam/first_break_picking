@@ -19,6 +19,7 @@ from tqdm import tqdm
 from src.config import SeismicConfig
 from src.training.metrics import (
     SegmentationMetrics,
+    SegmentationResults,
     compute_gradient_norm,
     compute_weight_norm,
 )
@@ -193,7 +194,7 @@ class SeismicTrainer:
             memory["max_allocated"] = torch.cuda.max_memory_allocated() / 1e9
         return memory
 
-    def train_epoch(self, verbose: bool = False) -> tuple[float, dict]:
+    def train_epoch(self, verbose: bool = False) -> tuple[float, SegmentationResults]:
         """
         Run one training epoch.
 
@@ -205,16 +206,16 @@ class SeismicTrainer:
         total_loss = 0.0
         seg_metrics = SegmentationMetrics(num_classes=3)
 
-        if self.device.type == "mps":
-            torch.mps.empty_cache()
+        # 🆕 Remove MPS cache clearing - PyTorch handles this
+        # if self.device.type == "mps":
+        #     torch.mps.empty_cache()
 
         pbar = tqdm(self.dataloaders["train"], desc="Training")
 
         for batch_idx, (x, y) in enumerate(pbar):
+            # 🆕 Ensure tensors are contiguous for MPS
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
-            x = x.contiguous()
-            y = y.contiguous()
 
             self.optimizer.zero_grad()
             outputs = self.model(x)
@@ -235,7 +236,9 @@ class SeismicTrainer:
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
 
-            if verbose and batch_idx % 10 == 0:
+            # 🆕 Configurable logging frequency
+            log_interval = self.config.log_batch_every or 10
+            if verbose and batch_idx % log_interval == 0:
                 logger.debug(
                     f"Batch {batch_idx}/{len(self.dataloaders['train'])} - Loss: {loss.item():.4f}"
                 )
@@ -248,7 +251,7 @@ class SeismicTrainer:
         return avg_loss, metrics
 
     @torch.no_grad()
-    def validate(self, verbose: bool = False) -> tuple[float, dict]:
+    def validate(self, verbose: bool = False) -> tuple[float, SegmentationResults]:
         """
         Run validation.
 
@@ -268,9 +271,6 @@ class SeismicTrainer:
         for x, y in pbar:
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
-            x = x.contiguous()
-            y = y.contiguous()
-
             outputs = self.model(x)
             loss = self.criterion(outputs, y)
             total_loss += loss.item()

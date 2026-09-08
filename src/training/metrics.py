@@ -2,10 +2,21 @@
 Evaluation metrics for seismic FBP.
 """
 
+from typing import TypedDict
+
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import nn
+
+
+class SegmentationResults(TypedDict):
+    accuracy: float
+    mean_iou: float
+    mean_f1: float
+    iou_per_class: list[float]
+    precision_per_class: list[float]
+    recall_per_class: list[float]
+    f1_per_class: list[float]
 
 
 class SegmentationMetrics:
@@ -26,23 +37,38 @@ class SegmentationMetrics:
         self.total_pixels = 0
 
     def update(self, predictions: torch.Tensor, targets: torch.Tensor):
-        """Update confusion matrix with batch."""
         pred = predictions.cpu().numpy().flatten()
         target = targets.cpu().numpy().flatten()
 
-        # Filter ignored indices
+        # ✅ Fix: Filter out -1 values from both pred and target
         if self.ignore_index >= 0:
-            mask = target != self.ignore_index
-            pred = pred[mask]
-            target = target[mask]
+            valid_mask = (
+                (target != self.ignore_index)
+                & (pred >= 0)
+                & (pred < self.num_classes)
+                & (target >= 0)
+                & (target < self.num_classes)
+            )
+        else:
+            valid_mask = (
+                (pred >= 0)
+                & (pred < self.num_classes)
+                & (target >= 0)
+                & (target < self.num_classes)
+            )
 
-        # Update confusion matrix
-        for i, (p, t) in enumerate(zip(pred, target)):
-            if 0 <= p < self.num_classes and 0 <= t < self.num_classes:
-                self.confusion_matrix[t, p] += 1
-            self.total_pixels += 1
+        pred = pred[valid_mask]
+        target = target[valid_mask]
 
-    def compute(self) -> dict[str, float | list[float]]:
+        if len(pred) == 0:
+            return
+
+        # ✅ Compute idx and bincount
+        idx = target * self.num_classes + pred
+        counts = np.bincount(idx, minlength=self.num_classes * self.num_classes)
+        self.confusion_matrix += counts.reshape(self.num_classes, self.num_classes)
+
+    def compute(self) -> SegmentationResults:
         """Compute all metrics."""
         cm = self.confusion_matrix
 
@@ -105,6 +131,9 @@ class FirstBreakMetrics:
 
     def __init__(self, tolerance_samples: int = 3):
         self.tolerance_samples = tolerance_samples
+        self.errors: list[float] = []
+        self.within_tolerance: list[bool] = []
+        self.total_traces: int = 0
         self.reset()
 
     def reset(self):
@@ -190,61 +219,23 @@ def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:
     return norms
 
 
-class ComboLoss(nn.Module):
-    def __init__(self, class_weights, dice_weight=0.5, focal_gamma=2.0):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss(weight=torch.tensor(class_weights))
-        self.dice_weight = dice_weight
-        self.gamma = focal_gamma
-
-    def forward(self, logits, target):
-        # CE
-        ce_loss = self.ce(logits, target)
-
-        # Focal
-        probs = F.softmax(logits, dim=1)
-        focal = (1 - probs) ** self.gamma * -torch.log(probs + 1e-7)
-        focal_loss = focal.gather(1, target.unsqueeze(1)).mean()
-
-        # Dice
-        target_oh = F.one_hot(target, probs.shape[1]).permute(0, 3, 1, 2).float()
-        dims = (0, 2, 3)
-        intersection = (probs * target_oh).sum(dims)
-        dice = (2 * intersection + 1e-6) / (
-            probs.sum(dims) + target_oh.sum(dims) + 1e-6
-        )
-        dice_loss = 1 - dice.mean()
-
-        return (1 - self.dice_weight) * (
-            0.5 * ce_loss + 0.5 * focal_loss
-        ) + self.dice_weight * dice_loss
-
-
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
     """
-    Extract first break picks from segmentation mask.
-
-    Args:
-        mask: (n_traces, n_samples) segmentation mask (classes 0, 1, 2)
-
-    Returns:
-        picks: (n_traces,) pick positions in samples
+    Extract first break picks from segmentation mask using vectorized operations.
     """
     n_traces = mask.shape[0]
     picks = np.zeros(n_traces, dtype=np.int64)
 
-    for i in range(n_traces):
-        # Find first occurrence of class 2 (strip) or class 1 (after)
-        strip_indices = np.where(mask[i] == 2)[0]
-        after_indices = np.where(mask[i] == 1)[0]
+    # Find strip positions for all traces at once
+    strip_indices = np.argmax(mask == 2, axis=1)
+    has_strip = np.any(mask == 2, axis=1)
 
-        if len(strip_indices) > 0:
-            # Pick is the center of the strip
-            picks[i] = int(np.median(strip_indices))
-        elif len(after_indices) > 0:
-            # Pick is the first after pixel minus strip_width/2
-            picks[i] = after_indices[0] - 4
-        else:
-            picks[i] = 0
+    # For traces with strip, use strip center
+    # For traces without strip, use first after pixel minus 4
+    after_indices = np.argmax(mask == 1, axis=1)
+
+    # Use numpy where for vectorized assignment
+    picks[has_strip] = strip_indices[has_strip]
+    picks[~has_strip] = np.maximum(after_indices[~has_strip] - 4, 0)
 
     return picks

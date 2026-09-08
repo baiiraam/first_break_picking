@@ -23,7 +23,9 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from scripts.error_patterns import is_memory_error, is_real_error
 from src.utils.logger import setup_logger
+from src.utils.model_registry import get_model_registry
 
 # ============================================================
 # DATASET CONFIGURATIONS
@@ -40,103 +42,6 @@ DATASET_CONFIGS = {
 # ============================================================
 # NOTIFICATION FUNCTIONS
 # ============================================================
-
-
-import re
-
-
-def is_real_error(output: str) -> bool:
-    """Check if the output contains a REAL error."""
-
-    # ============================================================
-    # STRATEGY 1: Check for explicit error patterns
-    # ============================================================
-    real_error_patterns = [
-        # Python exceptions (must be standalone lines)
-        r"^.*RuntimeError:",
-        r"^.*ValueError:",
-        r"^.*TypeError:",
-        r"^.*AttributeError:",
-        r"^.*KeyError:",
-        r"^.*IndexError:",
-        r"^.*ImportError:",
-        r"^.*ModuleNotFoundError:",
-        r"^.*FileNotFoundError:",
-        r"^.*PermissionError:",
-        r"^.*ConnectionError:",
-        r"^.*TimeoutError:",
-        r"^.*MemoryError:",
-        r"^.*OutOfMemoryError:",
-        # PyTorch specific
-        r"^.*MPS out of memory",
-        r"^.*CUDA out of memory",
-        r"^.*torch\.cuda\.OutOfMemoryError",
-        # Train.py specific errors
-        r"^.*Error:",
-        r"^.*Exception:",
-        r"^.*AssertionError",
-        # Stack trace indicator (must have actual error after)
-        r"Traceback \(most recent call last\):",
-        # 🆕 Exit code patterns (non-exception errors)
-        r"exited with code [1-9]",
-        r"Process exited with code [1-9]",
-        r"returned non-zero exit code",
-    ]
-
-    # Check each pattern - only if the line contains error context
-    for line in output.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-
-        # Skip MLflow info/warning lines
-        if "mlflow" in line.lower():
-            continue
-
-        # Skip INFO/WARNING/DEBUG log lines (they're not errors)
-        if (
-            any(
-                level in line
-                for level in [" INFO ", " WARNING ", " DEBUG ", " CRITICAL "]
-            )
-            and " ERROR " not in line
-        ):
-            continue
-
-        # Check real error patterns
-        for pattern in real_error_patterns:
-            if re.search(pattern, line, re.IGNORECASE):
-                return True
-
-    # ============================================================
-    # STRATEGY 2: Check for exit codes
-    # ============================================================
-    if "sys.exit(1)" in output or "exit(1)" in output:
-        return True
-
-    # 🆕 Additional exit code patterns
-    exit_patterns = [
-        r"exited with code [1-9]",
-        r"Process exited with code [1-9]",
-        r"returned non-zero exit code",
-    ]
-    for pattern in exit_patterns:
-        if re.search(pattern, output, re.IGNORECASE):
-            return True
-
-    # ============================================================
-    # STRATEGY 3: Check for "failed" in error context
-    # ============================================================
-    failed_patterns = [
-        r"failed with exit code",
-        r"command failed",
-        r"training failed",
-    ]
-    for pattern in failed_patterns:
-        if re.search(pattern, output, re.IGNORECASE):
-            return True
-
-    return False
 
 
 def send_email_notification(subject: str, body: str, config: dict):
@@ -217,60 +122,6 @@ def check_memory_usage() -> dict[str, float]:
         "percent": mem.percent,
         "gpu": gpu_memory,
     }
-
-
-def is_memory_error(error_message: str) -> bool:
-    """
-    Check if an error is a REAL memory error.
-    Uses the same robust detection as is_real_error.
-    """
-    # First check if it's even a real error
-    if not is_real_error(error_message):
-        # But also check if it contains memory-related terms directly
-        # (for cases where the error message is short)
-        memory_patterns = [
-            r"out of memory",
-            r"OOM",
-            r"MPS out of memory",
-            r"CUDA out of memory",
-            r"cannot allocate",
-            r"memory exhausted",
-            r"OutOfMemoryError",
-            r"MemoryError",
-            r"torch\.cuda\.OutOfMemoryError",
-            r"RuntimeError: MPS",
-            r"RuntimeError: CUDA",
-            r"MPS: out of memory",  # 🆕 Add this pattern
-            r"Out of memory\. Try reducing",  # 🆕 Add this pattern
-        ]
-
-        for pattern in memory_patterns:
-            if re.search(pattern, error_message, re.IGNORECASE):
-                return True
-        return False
-
-    # Then check for memory-specific patterns
-    memory_patterns = [
-        r"out of memory",
-        r"OOM",
-        r"MPS out of memory",
-        r"CUDA out of memory",
-        r"cannot allocate",
-        r"memory exhausted",
-        r"OutOfMemoryError",
-        r"MemoryError",
-        r"torch\.cuda\.OutOfMemoryError",
-        r"RuntimeError: MPS",
-        r"RuntimeError: CUDA",
-        r"MPS: out of memory",  # 🆕 Add this pattern
-        r"Out of memory\. Try reducing",  # 🆕 Add this pattern
-    ]
-
-    for pattern in memory_patterns:
-        if re.search(pattern, error_message, re.IGNORECASE):
-            return True
-
-    return False
 
 
 def clear_memory():
@@ -743,20 +594,18 @@ Errors:
     return summary_data
 
 
+# ============================================================
+# AUTO BATCH TRAINING (UPDATED to use registry)
+# ============================================================
+
+
 def run_auto_batch_training(
     config_file: str,
     selected_datasets: list[str] | None = None,
     override_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Run batch training with SMART auto-detection.
-
-    Calculates optimal batch_size, cache_size, and memory_limit based on:
-    1. Dataset characteristics (shots, traces, samples, chunks)
-    2. System resources (available memory, device type)
-    3. Model characteristics (parameters, memory footprint)
-
-    Shows detailed reasoning for each recommended value.
+    Run batch training with SMART auto-detection using model registry.
     """
 
     # ============================================================
@@ -782,7 +631,6 @@ def run_auto_batch_training(
     # ============================================================
 
     from scripts.check_device_memory import (
-        MODEL_PROFILES,
         get_device_info,
         get_recommended_memory_limits,
     )
@@ -889,8 +737,11 @@ def run_auto_batch_training(
         return (0, 0)
 
     # ============================================================
-    # 5. SMART CONFIGURATION CALCULATOR
+    # 5. GET REGISTRY AND CALCULATOR
     # ============================================================
+
+    # 🆕 Get registry once
+    registry = get_model_registry()
 
     def calculate_optimal_config(
         model_name: str,
@@ -900,11 +751,14 @@ def run_auto_batch_training(
     ) -> dict[str, Any]:
         """
         Calculate optimal config with detailed reasoning.
-        Returns: config + explanation of each decision.
+        Uses model registry for profiles.
         """
 
-        profile = MODEL_PROFILES.get(model_name)
+        # 🆕 Get profile from registry
+        profile = registry.get(model_name)
+
         if not profile:
+            logger.warning(f"Unknown model: {model_name}, skipping")
             return {}
 
         # Get dataset info
@@ -920,7 +774,6 @@ def run_auto_batch_training(
 
         # 2. CALCULATE AVAILABLE MEMORY FOR BATCH AND CACHE
         remaining_mb = available_mb - base_memory_mb
-        # remaining_gb = remaining_mb / 1024
 
         # 3. APPLY SAFETY MARGIN (20% for PyTorch overhead)
         safe_remaining_mb = remaining_mb * 0.8
@@ -929,7 +782,6 @@ def run_auto_batch_training(
         # 4. CALCULATE OPTIMAL BATCH SIZE
         memory_per_batch_mb = profile.memory_per_batch_mb
 
-        # Dataset size factor: larger datasets can use larger batches
         total_shots = dataset_info.get("total_shots", 0)
         if total_shots > 200:
             dataset_factor = 1.2
@@ -941,16 +793,13 @@ def run_auto_batch_training(
             dataset_factor = 0.8
             dataset_size_label = "small"
 
-        # Calculate max batch by memory
         if memory_per_batch_mb > 0:
             max_batch_by_memory = int(safe_remaining_mb / memory_per_batch_mb)
         else:
             max_batch_by_memory = 8
 
-        # Recommended batch from model profile
         recommended_batch = profile.recommended_batch_size
 
-        # Optimal batch = min(what fits, what's recommended, dataset size)
         optimal_batch: int = min(
             max(1, max_batch_by_memory),
             int(recommended_batch * dataset_factor),
@@ -962,11 +811,9 @@ def run_auto_batch_training(
 
         # 5. CALCULATE OPTIMAL CACHE SIZE
         remaining_after_batch_mb = safe_remaining_mb - batch_memory_mb
-        # remaining_after_batch_gb = remaining_after_batch_mb / 1024
 
         memory_per_cache_mb = profile.memory_per_cache_mb
 
-        # Cache size factor: more chunks → larger cache
         num_chunks = dataset_info.get("num_chunks", 4)
         cache_factor = min(1.0, max(0.3, num_chunks / 10))
 
@@ -990,7 +837,6 @@ def run_auto_batch_training(
         total_memory_mb = base_memory_mb + batch_memory_mb + cache_memory_mb
         total_memory_gb = total_memory_mb / 1024
 
-        # Device-specific overhead factor
         if device_type == "mps":
             overhead_factor = 1.5
         elif device_type == "cuda":
@@ -999,10 +845,9 @@ def run_auto_batch_training(
             overhead_factor = 1.2
 
         memory_limit_gb: float = (total_memory_mb / 1024) * overhead_factor
-        memory_limit_gb = round(memory_limit_gb * 2) / 2  # Round to nearest 0.5
+        memory_limit_gb = round(memory_limit_gb * 2) / 2
         memory_limit_gb = max(0.5, memory_limit_gb)
 
-        # 7. DETERMINE IF MODEL WILL FIT
         can_fit = memory_limit_gb < available_memory_gb * 0.9
 
         # 8. BUILD EXPLANATION
@@ -1076,23 +921,27 @@ def run_auto_batch_training(
         return explanation
 
     # ============================================================
-    # 6. GENERATE SMART CONFIGURATIONS FOR ALL MODELS/DATASETS
+    # 6. GENERATE SMART CONFIGURATIONS
     # ============================================================
 
     model_order = auto_config.get(
         "model_order",
         ["pico", "nano", "tiny", "mpslight", "light", "mobile", "efficient", "unet"],
     )
+
     all_configs = {}
     all_variants = []
-
-    # Store for logging
     all_explanations = []
 
     for dataset_name in selected_datasets:
         dataset_configs = {}
 
         for model_name in model_order:
+            # 🆕 Check if model exists in registry
+            if not registry.get(model_name):
+                logger.warning(f"Model '{model_name}' not found in registry, skipping")
+                continue
+
             config = calculate_optimal_config(
                 model_name=model_name,
                 dataset_name=dataset_name,
@@ -1104,8 +953,8 @@ def run_auto_batch_training(
                 dataset_configs[model_name] = config
                 all_explanations.append(config)
 
-                # Generate variants (optimal + fallbacks)
                 final = config["final_config"]
+
                 variants = [
                     # Level 1: Optimal
                     {
@@ -1185,15 +1034,18 @@ def run_auto_batch_training(
         logger.info("-" * 60)
 
         for model_name, config in dataset_configs.items():
+            # 🆕 Get profile from registry
+            profile = registry.get(model_name)
+            if not profile:
+                continue
+
             calculations = config["calculations"]
             final = config["final_config"]
             can_fit = config["can_fit"]
 
             status = "✅ WILL FIT" if can_fit else "⚠️ MAY NOT FIT"
 
-            logger.info(
-                f"\n  🔬 {model_name.upper()} ({MODEL_PROFILES[model_name].params:,} params)"
-            )
+            logger.info(f"\n  🔬 {model_name.upper()} ({profile.params:,} params)")
             logger.info(f"     Status: {status}")
             logger.info(
                 f"     Recommended: batch={final['batch_size']}, cache={final['cache_size']}, memory={final['memory_limit_gb']:.1f}GB"
@@ -1425,7 +1277,7 @@ def run_auto_batch_training(
         "failed_datasets": failed_datasets,
         "total_duration_seconds": total_duration,
         "results": results,
-        "configs": all_configs,  # Include all calculated configurations
+        "configs": all_configs,
     }
 
     summary_dir = Path("logs/batch")

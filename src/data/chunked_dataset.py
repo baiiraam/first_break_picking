@@ -63,7 +63,6 @@ class ChunkedSeismicDataset(Dataset):
 
         # Cache: chunk_idx -> (data_tensor, mask_tensor)
         self.cache = LRUCache(max_size=cache_size)
-        self.cache_order: list[int] = []  # LRU order for tracking
 
         logger.info(
             f"[Dataset] Ready: {len(self)} samples, {len(self.chunks)} chunks, cache_size={cache_size}"
@@ -75,11 +74,11 @@ class ChunkedSeismicDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         chunk_idx = self.chunk_indices[idx]
         local_idx = self.chunk_offsets[idx]
-        shot_id = self.shot_ids[idx]
+        # shot_id = self.shot_ids[idx]
 
-        logger.debug(
-            f"[Dataset] GET idx={idx} → chunk={chunk_idx}, local={local_idx}, shot={shot_id}"
-        )
+        # ✅ Only log at INFO level for the first batch, or remove entirely
+        if idx == 0:  # Log once per epoch
+            logger.info(f"[Dataset] First sample: chunk={chunk_idx}, local={local_idx}")
 
         # Load chunk if not in cache
         if chunk_idx not in self.cache:
@@ -114,7 +113,6 @@ class ChunkedSeismicDataset(Dataset):
                 "shot_ids": chunk_data["shot_ids"],
             },
         )
-        self.cache_order.append(chunk_idx)
 
         # Log cache stats after load
         stats = self.cache.get_stats()

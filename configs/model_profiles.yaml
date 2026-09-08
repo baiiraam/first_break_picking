@@ -1,0 +1,78 @@
+# ============================================================
+# MODEL PROFILES
+# ============================================================
+# This file defines memory and performance profiles for all models.
+# Used by check_device_memory.py and batch_train.py for auto-configuration.
+#
+# Fields:
+#   params: Number of parameters
+#   base_memory_mb: Base memory usage (model + overhead)
+#   memory_per_batch_mb: Additional memory per batch item
+#   memory_per_cache_mb: Additional memory per cached chunk
+#   recommended_batch_size: Default batch size
+#   recommended_cache_size: Default cache size
+# ============================================================
+
+pico:
+  params: 2000
+  base_memory_mb: 200
+  memory_per_batch_mb: 100
+  memory_per_cache_mb: 50
+  recommended_batch_size: 8
+  recommended_cache_size: 5
+
+nano:
+  params: 10000
+  base_memory_mb: 250
+  memory_per_batch_mb: 100
+  memory_per_cache_mb: 50
+  recommended_batch_size: 8
+  recommended_cache_size: 5
+
+tiny:
+  params: 50000
+  base_memory_mb: 300
+  memory_per_batch_mb: 150
+  memory_per_cache_mb: 75
+  recommended_batch_size: 6
+  recommended_cache_size: 4
+
+mpslight:
+  params: 1700000
+  base_memory_mb: 600
+  memory_per_batch_mb: 200
+  memory_per_cache_mb: 100
+  recommended_batch_size: 6
+  recommended_cache_size: 4
+
+light:
+  params: 2500000
+  base_memory_mb: 800
+  memory_per_batch_mb: 250
+  memory_per_cache_mb: 125
+  recommended_batch_size: 5
+  recommended_cache_size: 4
+
+mobile:
+  params: 3500000
+  base_memory_mb: 1000
+  memory_per_batch_mb: 300
+  memory_per_cache_mb: 150
+  recommended_batch_size: 4
+  recommended_cache_size: 3
+
+efficient:
+  params: 5000000
+  base_memory_mb: 1200
+  memory_per_batch_mb: 350
+  memory_per_cache_mb: 175
+  recommended_batch_size: 4
+  recommended_cache_size: 3
+
+unet:
+  params: 31000000
+  base_memory_mb: 3000
+  memory_per_batch_mb: 1000
+  memory_per_cache_mb: 500
+  recommended_batch_size: 3
+  recommended_cache_size: 2

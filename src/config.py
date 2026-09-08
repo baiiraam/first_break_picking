@@ -83,7 +83,16 @@ class SeismicConfig:
     # === Debugging ===
     verbose_training: bool = False
     log_batch_every: int | None = None  # None = disabled
+
+    # === Preprocessing ===
+    ignore_index: int = -1
+    mask_unlabeled: bool = True
+    shuffle_chunks: bool = True
+
+    # === Data Loading ===
     sampling_interval_ms: float = 2.0
+
+    num_classes: int = 3
 
     def __post_init__(self):
         """Validate configuration parameters."""

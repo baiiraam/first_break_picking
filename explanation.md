@@ -276,16 +276,10 @@ base_memory_mb = model_profile.base_memory_mb
 safe_remaining_mb = (available_mb - base_memory_mb) * 0.8
 
 optimal_batch = min(
-    safe_remaining_mb / memory_per_batch_mb,
-    recommended_batch,
-    total_shots
+    safe_remaining_mb / memory_per_batch_mb, recommended_batch, total_shots
 )
 
-optimal_cache = min(
-    remaining_mb / memory_per_cache_mb,
-    recommended_cache,
-    num_chunks
-)
+optimal_cache = min(remaining_mb / memory_per_cache_mb, recommended_cache, num_chunks)
 ```
 
 ### **3. MPS Warmup**

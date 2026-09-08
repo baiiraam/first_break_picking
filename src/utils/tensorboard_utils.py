@@ -145,6 +145,7 @@ class TensorBoardManager:
         plt.tight_layout()
         self.writer.add_figure(f"Seismogram/Shot_{shot_id}", fig, step)
         plt.close(fig)
+        plt.clf()
 
     def log_learning_rate(self, lr: float, step: int | None = None):
         """Log learning rate."""

@@ -134,12 +134,6 @@ class SeismicLogger:
             serialize=True,
         )
 
-        # Store log paths for reference
-        self.main_log_path = self.main_log_path
-        self.error_log_path = self.error_log_path
-        self.debug_log_path = self.debug_log_path
-        self.json_log_path = self.json_log_path
-
     def _create_symlink(self):
         """Create a symlink to the latest log file."""
         # Skip in worker processes

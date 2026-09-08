@@ -3,9 +3,18 @@
 Loss function factory for seismic FBP with ignore_index support.
 """
 
+from enum import Enum
+
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+
+class LossType(Enum):
+    CROSS_ENTROPY = "cross_entropy"
+    FOCAL = "focal"
+    DICE = "dice"
+    COMBO = "combo"
 
 
 class FocalLoss(nn.Module):
@@ -171,26 +180,26 @@ def create_loss_function(config) -> nn.Module:
         config, "ignore_index", -1
     )  # 🆕 Get ignore_index from config
 
-    if loss_type == "cross_entropy":
+    if loss_type == LossType.CROSS_ENTROPY.value:
         return nn.CrossEntropyLoss(
             weight=torch.tensor(class_weights),
             ignore_index=ignore_index,  # 🆕 Pass ignore_index
         )
 
-    elif loss_type == "focal":
+    elif loss_type == LossType.FOCAL.value:
         return FocalLoss(
             alpha=class_weights,
             gamma=getattr(config, "focal_gamma", 2.0),
             ignore_index=ignore_index,  # 🆕 Pass ignore_index
         )
 
-    elif loss_type == "dice":
+    elif loss_type == LossType.DICE.value:
         return DiceLoss(
             num_classes=len(class_weights),
             ignore_index=ignore_index,  # 🆕 Pass ignore_index
         )
 
-    elif loss_type == "combo":
+    elif loss_type == LossType.COMBO.value:
         return ComboLoss(
             class_weights=class_weights,
             dice_weight=getattr(config, "dice_weight", 0.5),
