@@ -1,3 +1,5 @@
+Sep 8, 2026, 20:08
+
 # 🚀 Seismic First Break Picking - Training Guide
 
 ## Quick Start

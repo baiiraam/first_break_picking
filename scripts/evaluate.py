@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.loader import load_model_from_checkpoint  # ✅ NEW
+from src.models.mps_light_unet import MPSLightUNet
 from src.preprocessing.manifest import load_manifest
 from src.training.metrics import (
     FirstBreakMetrics,
@@ -57,13 +57,6 @@ from src.utils.mlflow_utils import format_registered_model_name, get_mlflow_mana
     help="Which split to evaluate",
 )
 @click.option("--detailed", is_flag=True, help="Generate detailed per-shot metrics")
-@click.option(
-    "--model-type",
-    "-t",
-    type=click.Choice(["unet", "mpslight", "light", "nano", "tiny", "pico", "mobile", "efficient"]),
-    default=None,
-    help="Model architecture type override",
-)
 def main(
     config: str,
     model: str,
@@ -73,7 +66,6 @@ def main(
     dataset: str,
     split: str,
     detailed: bool,
-    model_type: str
 ):
     """Evaluate the trained model on test set."""
 
@@ -128,7 +120,7 @@ def main(
     device_obj = torch.device(cfg.device)
 
     # ============================================================
-    # LOAD MODEL - Using unified loader
+    # LOAD MODEL
     # ============================================================
     if model == "best":
         logger.info("🔍 Searching for best model...")
@@ -144,8 +136,6 @@ def main(
         if champion:
             model_uri = f"models:/{registered_name}@champion"
             logger.info(f"Found champion model: {model_uri}")
-            model_obj = mlflow.pytorch.load_model(model_uri)
-            model_obj = model_obj.to(device_obj)
         else:
             # Search by metrics
             best_models = mlflow_manager.search_models(
@@ -156,8 +146,6 @@ def main(
             if best_models:
                 model_uri = f"models:/{best_models[0].model_id}"
                 logger.info(f"Found best model by IoU: {model_uri}")
-                model_obj = mlflow.pytorch.load_model(model_uri)
-                model_obj = model_obj.to(device_obj)
             else:
                 logger.error(f"No model found for dataset '{cfg.dataset_name}'")
                 sys.exit(1)
@@ -173,18 +161,8 @@ def main(
             sys.exit(1)
 
     else:
-        # ✅ Use unified loader for local and MLflow checkpoints
-        # Determine model type
-        if hasattr(cfg, "model_name"):
-            model_type = cfg.model_name
-        else:
-            # Try to infer from file name or default
-            model_type = "mpslight"
-
-        logger.info(f"Loading model with type: {model_type}")
-
+        # Local file path - check if it's an MLflow URI
         if model.startswith("models:/"):
-            # Load from MLflow URI
             try:
                 logger.info(f"Loading model from MLflow: {model}")
                 model_obj = mlflow.pytorch.load_model(model)
@@ -194,24 +172,16 @@ def main(
                 logger.error(f"Failed to load from MLflow: {e}")
                 sys.exit(1)
         else:
-            # Load from file using unified loader
             # Regular file path
             try:
                 logger.info(f"Loading model from file: {model}")
-                
-                # ✅ Use model_type if provided, else infer from config
-                if model_type:
-                    arch_type = model_type
-                elif hasattr(cfg, "model_name"):
-                    arch_type = cfg.model_name
+                model_obj = MPSLightUNet(in_channels=1, out_channels=3)
+                checkpoint = torch.load(model, map_location=device_obj)
+                if "model_state_dict" in checkpoint:
+                    model_obj.load_state_dict(checkpoint["model_state_dict"])
                 else:
-                    arch_type = "mpslight"
-                
-                model_obj = load_model_from_checkpoint(
-                    model_path=model,
-                    model_type=arch_type,
-                    device=device_obj,
-                )
+                    model_obj.load_state_dict(checkpoint)
+                model_obj = model_obj.to(device_obj)
                 logger.info("✅ Model loaded successfully from file")
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to load model: {e}")
@@ -283,6 +253,7 @@ def main(
                                 )
                                 shot_ids.append(shot_id)
                             except (AttributeError, IndexError, KeyError) as e:
+                                # Fallback: use index if shot_id not available
                                 logger.debug(f"Could not get shot_id: {e}")
                                 shot_ids.append(batch_idx * cfg.batch_size + i)
 
@@ -345,7 +316,7 @@ def main(
                 {
                     "shot_id": shot_ids,
                     "error_samples": shot_errors,
-                    "error_ms": np.array(shot_errors) * 2,
+                    "error_ms": np.array(shot_errors) * 2,  # Assuming 2ms per sample
                 }
             )
             all_detailed_results.append(

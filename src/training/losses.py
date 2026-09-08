@@ -19,15 +19,10 @@ class FocalLoss(nn.Module):
         ignore_index: int = -1,  # 🆕 Add this
     ):
         super().__init__()
+        self.alpha = torch.tensor(alpha) if alpha is not None else None
         self.gamma = gamma
         self.reduction = reduction
         self.ignore_index = ignore_index  # 🆕 Store it
-
-        # ✅ Register as buffer to auto-move to device
-        if alpha is not None:
-            self.register_buffer("alpha", torch.tensor(alpha, dtype=torch.float32))
-        else:
-            self.alpha = None
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # 🆕 Create mask for valid pixels
@@ -117,6 +112,9 @@ class ComboLoss(nn.Module):
         ignore_index: int = -1,  # 🆕 Add this
     ):
         super().__init__()
+        self.class_weights = (
+            torch.tensor(class_weights) if class_weights is not None else None
+        )
         self.dice_weight = dice_weight
         self.focal_gamma = focal_gamma
         self.ignore_index = ignore_index  # 🆕 Store it
@@ -161,40 +159,7 @@ class ComboLoss(nn.Module):
 
         # Combined loss
         combined_ce_focal = 0.5 * ce_loss + 0.5 * focal_loss
-        total_loss = (
-            1 - self.dice_weight
-        ) * combined_ce_focal + self.dice_weight * dice_loss
-
-        if return_components:
-            per_class_loss = self._compute_per_class_loss(logits, target)
-
-            return total_loss, {
-                "total": total_loss.item(),
-                "ce": ce_loss.item(),
-                "focal": focal_loss.item(),
-                "dice": dice_loss.item(),
-                "ce_focal_combined": combined_ce_focal.item(),
-                "per_class": per_class_loss,
-            }
-
-        return total_loss
-
-    def _compute_per_class_loss(self, logits, target, num_classes=3):
-        """Compute loss per class for monitoring."""
-        per_class = {}
-        for c in range(num_classes):
-            mask = target == c
-            if mask.sum() > 0:
-                class_target = torch.zeros_like(logits[:, c, :, :])
-                class_target[mask] = 1.0
-                loss = F.binary_cross_entropy_with_logits(
-                    logits[:, c, :, :][mask], class_target[mask], reduction="mean"
-                )
-                per_class[f"class_{c}"] = loss.item()
-            else:
-                per_class[f"class_{c}"] = 0.0
-        per_class["strip"] = per_class.get("class_2", 0.0)
-        return per_class
+        return (1 - self.dice_weight) * combined_ce_focal + self.dice_weight * dice_loss
 
 
 def create_loss_function(config) -> nn.Module:

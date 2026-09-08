@@ -1,5 +1,5 @@
 """
-Training loop with MLflow, TensorBoard, Loguru integration, and modular callbacks.
+Training loop with MLflow, TensorBoard, and Loguru integration.
 """
 
 import os
@@ -7,20 +7,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
+import mlflow
+import mlflow.pytorch
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.config import SeismicConfig
-from src.training.callbacks import Callback  # 🔥 NEW: Import Callback base class
-from src.training.losses import ComboLoss
 from src.training.metrics import (
     SegmentationMetrics,
+    compute_gradient_norm,
+    compute_weight_norm,
 )
 from src.utils.logger import get_logger
-from src.utils.memory_utils import get_memory_manager  # 🔥 NEW: Memory manager
 from src.utils.mlflow_utils import (
+    format_model_name,
+    format_registered_model_name,
     get_mlflow_manager,
 )
 
@@ -29,7 +34,7 @@ logger = get_logger()
 
 class SeismicTrainer:
     """
-    Integrated trainer with MLflow, TensorBoard, modular callbacks, and Loguru.
+    Integrated trainer with MLflow, TensorBoard, and Loguru.
     """
 
     def __init__(
@@ -40,14 +45,10 @@ class SeismicTrainer:
         optimizer: torch.optim.Optimizer,
         config: SeismicConfig,
         model_name: str = "unet",
-        mlflow_run_id: str | None = None,
-        callbacks: list[Callback] | None = None,  # 🔥 NEW: Accept callbacks
     ):
         self.config = config
         self.model_name = model_name
         self.device = self._setup_device(config.device)
-        self.mlflow_run_id = mlflow_run_id
-        self.callbacks = callbacks or []  # 🔥 NEW: Store callbacks
 
         # Setup model
         self.model: nn.Module
@@ -64,7 +65,7 @@ class SeismicTrainer:
         self.optimizer = optimizer
         self.scheduler = self._create_scheduler()
 
-        # Model Registry Directory
+        # Model Registry Directory (centralized)
         self.registry_dir = Path(config.model_registry_dir)
         self.registry_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,7 +76,7 @@ class SeismicTrainer:
         self.tb_dir.mkdir(parents=True, exist_ok=True)
         self.writer = SummaryWriter(log_dir=str(self.tb_dir))
 
-        # Initialize MLflow manager
+        # Initialize MLflow manager with all features
         self.mlflow_manager = get_mlflow_manager(
             experiment_name=config.mlflow_experiment_name,
             enable_system_metrics=True,
@@ -86,22 +87,8 @@ class SeismicTrainer:
             str, dict[str, Any]
         ] = {}  # Track registered models for alias management
 
-        # 🔥 NEW: Initialize callbacks with trainer reference
-        self._setup_callbacks()
-
         logger.info(f"Model registry: {self.registry_dir}")
         logger.info(f"TensorBoard: {self.tb_dir}")
-        logger.info(f"Callbacks: {len(self.callbacks)} registered")
-        if self.mlflow_run_id:
-            logger.info(f"MLflow run ID to continue: {self.mlflow_run_id}")
-
-    # 🔥 NEW: Setup callbacks method
-    def _setup_callbacks(self):
-        """Setup and initialize callbacks with trainer reference."""
-        for callback in self.callbacks:
-            if hasattr(callback, "set_trainer"):
-                callback.set_trainer(self)
-            logger.debug(f"Registered callback: {callback.__class__.__name__}")
 
     def _setup_device(self, requested_device: str) -> torch.device:
         """Setup device with fallback."""
@@ -152,7 +139,7 @@ class SeismicTrainer:
             )
         return None
 
-    def load_checkpoint(self, checkpoint_path: str) -> tuple[int, str | None]:
+    def load_checkpoint(self, checkpoint_path: str) -> int:
         """Load checkpoint with full state restoration."""
         logger.info(f"Loading checkpoint: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -189,116 +176,64 @@ class SeismicTrainer:
                     f"Scheduler state mismatch: {e}, using fresh scheduler state"
                 )
 
-        mlflow_run_id = checkpoint.get("mlflow_run_id")
-        if mlflow_run_id:
-            logger.info(f"Found MLflow run ID in checkpoint: {mlflow_run_id}")
-        else:
-            logger.info("No MLflow run ID found in checkpoint (will create new run)")
-
         logger.info(
             f"Resumed from epoch {checkpoint['epoch']} with val_loss={checkpoint.get('val_loss', 'N/A')}"
         )
         return int(checkpoint["epoch"])
 
-    # ============================================================
-    # 🔥 NEW: UNIFIED STEP EXECUTION
-    # ============================================================
+    def get_memory_usage(self) -> dict[str, float]:
+        """Get current memory usage without sudo."""
+        memory = {}
+        if self.device.type == "mps":
+            memory["allocated"] = torch.mps.current_allocated_memory() / 1e9
+            memory["max_allocated"] = torch.mps.driver_allocated_memory() / 1e9
+        elif self.device.type == "cuda":
+            memory["allocated"] = torch.cuda.memory_allocated() / 1e9
+            memory["reserved"] = torch.cuda.memory_reserved() / 1e9
+            memory["max_allocated"] = torch.cuda.max_memory_allocated() / 1e9
+        return memory
 
-    def _execute_step(
-        self, x: torch.Tensor, y: torch.Tensor, is_train: bool
-    ) -> tuple[torch.Tensor, dict, torch.Tensor]:
+    def train_epoch(self, verbose: bool = False) -> tuple[float, dict]:
         """
-        Unified step execution for both training and validation.
+        Run one training epoch.
 
         Returns:
-            loss: The loss tensor
-            components: Dictionary of loss components (if ComboLoss)
-            outputs: Model outputs
+            avg_loss: Average training loss
+            metrics: Dictionary of training metrics (IoU, accuracy, etc.)
         """
-        x = x.to(self.device, non_blocking=True).contiguous()
-        y = y.to(self.device, non_blocking=True).contiguous()
+        self.model.train()
+        total_loss = 0.0
+        seg_metrics = SegmentationMetrics(num_classes=3)
 
-        if is_train:
+        if self.device.type == "mps":
+            torch.mps.empty_cache()
+
+        pbar = tqdm(self.dataloaders["train"], desc="Training")
+
+        for batch_idx, (x, y) in enumerate(pbar):
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
+            x = x.contiguous()
+            y = y.contiguous()
+
             self.optimizer.zero_grad()
+            outputs = self.model(x)
 
-        outputs = self.model(x)
-
-        # Handle loss and components cleanly
-        if isinstance(self.criterion, ComboLoss):
-            loss, components = self.criterion(outputs, y, return_components=True)
-        else:
             loss = self.criterion(outputs, y)
-            components = {}
-
-        if is_train:
             loss.backward()
+
             if self.config.gradient_clip_value is not None:
                 torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(),
                     self.config.gradient_clip_value,
                 )
+
             self.optimizer.step()
-
-        return loss, components, outputs
-
-    # ============================================================
-    # TRAINING EPOCH (Uses unified step execution)
-    # ============================================================
-
-    def train_epoch(self, verbose: bool = False) -> tuple[float, dict]:
-        """
-        Run one training epoch using unified step execution.
-        """
-        self.model.train()
-        total_loss = 0.0
-        seg_metrics = SegmentationMetrics(num_classes=3, device=self.device)
-
-        if self.device.type == "mps":
-            torch.mps.empty_cache()
-
-        loss_components = {
-            "total": 0.0,
-            "ce": 0.0,
-            "focal": 0.0,
-            "dice": 0.0,
-            "ce_focal_combined": 0.0,
-            "per_class": {},
-        }
-        num_batches = 0
-        pbar = tqdm(self.dataloaders["train"], desc="Training")
-
-        for batch_idx, (x, y) in enumerate(pbar):
-            # 🔥 Call batch start callback
-            for callback in self.callbacks:
-                callback.on_batch_start(batch_idx)
-
-            # Execute step
-            loss, components, outputs = self._execute_step(x, y, is_train=True)
-
             total_loss += loss.item()
-            num_batches += 1
-
-            # Accumulate component losses
-            if components:
-                loss_components["total"] += components.get("total", 0)
-                loss_components["ce"] += components.get("ce", 0)
-                loss_components["focal"] += components.get("focal", 0)
-                loss_components["dice"] += components.get("dice", 0)
-                loss_components["ce_focal_combined"] += components.get(
-                    "ce_focal_combined", 0
-                )
-                for class_name, class_loss in components.get("per_class", {}).items():
-                    if class_name not in loss_components["per_class"]:
-                        loss_components["per_class"][class_name] = 0.0
-                    loss_components["per_class"][class_name] += class_loss
 
             # Update segmentation metrics
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
-
-            # 🔥 Call batch end callback
-            for callback in self.callbacks:
-                callback.on_batch_end(batch_idx, loss.item())
 
             if verbose and batch_idx % 10 == 0:
                 logger.debug(
@@ -310,88 +245,43 @@ class SeismicTrainer:
         avg_loss = total_loss / len(self.dataloaders["train"])
         metrics = seg_metrics.compute()
 
-        if num_batches > 0 and components:
-            for key in ["total", "ce", "focal", "dice", "ce_focal_combined"]:
-                metrics[f"loss_{key}"] = loss_components[key] / num_batches
-            for class_name, class_loss in loss_components["per_class"].items():
-                metrics[f"loss_{class_name}"] = class_loss / num_batches
-
         return avg_loss, metrics
-
-    # ============================================================
-    # VALIDATION (Uses unified step execution)
-    # ============================================================
 
     @torch.no_grad()
     def validate(self, verbose: bool = False) -> tuple[float, dict]:
         """
-        Run validation using unified step execution.
+        Run validation.
+
+        Returns:
+            avg_loss: Average validation loss
+            metrics: Dictionary of validation metrics (IoU, accuracy, etc.)
         """
         self.model.eval()
         total_loss = 0.0
-        seg_metrics = SegmentationMetrics(num_classes=3, device=self.device)
+        seg_metrics = SegmentationMetrics(num_classes=3)
 
         if self.device.type == "mps":
             torch.mps.empty_cache()
 
-        loss_components = {
-            "total": 0.0,
-            "ce": 0.0,
-            "focal": 0.0,
-            "dice": 0.0,
-            "ce_focal_combined": 0.0,
-            "per_class": {},
-        }
-        num_batches = 0
         pbar = tqdm(self.dataloaders["val"], desc="Validation")
 
-        for batch_idx, (x, y) in enumerate(pbar):
-            # 🔥 Call batch start callback
-            for callback in self.callbacks:
-                callback.on_batch_start(batch_idx)
+        for x, y in pbar:
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
+            x = x.contiguous()
+            y = y.contiguous()
 
-            # Execute step (validation)
-            loss, components, outputs = self._execute_step(x, y, is_train=False)
-
+            outputs = self.model(x)
+            loss = self.criterion(outputs, y)
             total_loss += loss.item()
-            num_batches += 1
 
-            # Accumulate component losses
-            if components:
-                loss_components["total"] += components.get("total", 0)
-                loss_components["ce"] += components.get("ce", 0)
-                loss_components["focal"] += components.get("focal", 0)
-                loss_components["dice"] += components.get("dice", 0)
-                loss_components["ce_focal_combined"] += components.get(
-                    "ce_focal_combined", 0
-                )
-                for class_name, class_loss in components.get("per_class", {}).items():
-                    if class_name not in loss_components["per_class"]:
-                        loss_components["per_class"][class_name] = 0.0
-                    loss_components["per_class"][class_name] += class_loss
-
-            # Update segmentation metrics
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
-
-            # 🔥 Call batch end callback
-            for callback in self.callbacks:
-                callback.on_batch_end(batch_idx, loss.item())
 
         avg_loss = total_loss / len(self.dataloaders["val"])
         metrics = seg_metrics.compute()
 
-        if num_batches > 0 and components:
-            for key in ["total", "ce", "focal", "dice", "ce_focal_combined"]:
-                metrics[f"val_loss_{key}"] = loss_components[key] / num_batches
-            for class_name, class_loss in loss_components["per_class"].items():
-                metrics[f"val_loss_{class_name}"] = class_loss / num_batches
-
         return avg_loss, metrics
-
-    # ============================================================
-    # REMAINING METHODS (warmup, logging, checkpoint, fit, etc.)
-    # ============================================================
 
     def _warmup_mps(self):
         """Warm up MPS shaders to avoid JIT compilation delay during training."""
@@ -399,21 +289,41 @@ class SeismicTrainer:
             return
 
         logger.info("🔥 Warming up MPS shaders (first pass can take 2-10 minutes)...")
+
+        # Create dummy data with production shape
         dummy_x = torch.randn(1, 1, 1578, 751, device=self.device)
         dummy_y = torch.randint(0, 3, (1, 1578, 751), device=self.device)
 
+        # Forward pass
         dummy_out = self.model(dummy_x)
+
+        # Loss
         dummy_loss = self.criterion(dummy_out, dummy_y)
+
+        # Backward pass (this triggers shader compilation)
         dummy_loss.backward()
+
+        # Synchronize to ensure compilation completes
         torch.mps.synchronize()
+
+        # Clear gradients and memory
         self.model.zero_grad()
         torch.mps.empty_cache()
+
         logger.info("✅ MPS warmup complete!")
 
-    def _start_new_mlflow_run(self, config_dict):
-        """Start a new MLflow run with descriptive name."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        run_name = f"{self.model_name}-{self.config.dataset_name}-{timestamp}"
+    def _log_model_checkpoint(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        val_metrics: dict | None = None,
+    ):
+        """
+        Log a model checkpoint with MLflow registry support.
+        """
+        if (epoch + 1) % self.config.checkpoint_every != 0:
+            return
 
         # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_type = self.model_name
@@ -659,60 +569,26 @@ class SeismicTrainer:
         # Start MLflow run with tags
         self.mlflow_manager.start_run(
             config_dict=config_dict,
-            run_name=run_name,
             tags={
                 "dataset": self.config.dataset_name,
                 "model_type": self.model_name,
                 "device": str(self.device),
                 "experiment_type": "training",
-                "run_type": "new",
             },
         )
-
-    # ============================================================
-    # 🔥 UPDATED: fit() method with callback integration
-    # ============================================================
-
-    def fit(self, resume_from: str | None = None, verbose: bool = False):
-        """Main training loop with integrated logging and callbacks."""
-        # Setup
-        start_epoch = 0
-        mlflow_run_id_from_checkpoint = None
-
-        if resume_from and os.path.exists(resume_from):
-            start_epoch, mlflow_run_id_from_checkpoint = self.load_checkpoint(
-                resume_from
-            )
-            if mlflow_run_id_from_checkpoint:
-                self.mlflow_run_id = mlflow_run_id_from_checkpoint
-
-        # Start/continue MLflow run
-        config_dict = self.config.to_dict()
-        config_dict["model_name"] = self.model_name
-
-        if self.mlflow_run_id:
-            try:
-                self.mlflow_manager.set_run(self.mlflow_run_id)
-                self.mlflow_manager.set_tag("resumed", "True")
-                self.mlflow_manager.set_tag("resumed_from_epoch", str(start_epoch))
-            except Exception as e:
-                logger.warning(f"Could not continue MLflow run: {e}")
-                self._start_new_mlflow_run(config_dict)
-        else:
-            self._start_new_mlflow_run(config_dict)
-
         run_id = self.mlflow_manager.run_id
+
         logger.info(f"Starting training from epoch {start_epoch}")
         logger.info(f"MLflow Run ID: {run_id}")
+        logger.info(f"TensorBoard: {self.tb_dir}")
 
-        # ✅ Wrap the entire training loop in try/finally for cleanup
-        try:
-            # Call epoch start callbacks for initial state
-            for callback in self.callbacks:
-                callback.on_epoch_start(start_epoch, model=self.model)
+        # Log model graph once
+        if start_epoch == 0:
+            sample_x = next(iter(self.dataloaders["train"]))[0][:1].to(self.device)
+            self.writer.add_graph(self.model, sample_x)
 
-            # Warmup
-            self._warmup_mps()
+        # --- WARMUP MPS SHADERS ---
+        self._warmup_mps()
 
         # Training loop
         best_val_loss = float("inf")
@@ -720,107 +596,242 @@ class SeismicTrainer:
         patience_counter = 0
         epoch_times: list[float] = []
 
-            for epoch in range(start_epoch, self.config.n_epochs):
-                epoch_start = datetime.now(timezone.utc)
+        for epoch in range(start_epoch, self.config.n_epochs):
+            epoch_start = datetime.now(timezone.utc)
 
-                # Call epoch start callbacks
-                for callback in self.callbacks:
-                    callback.on_epoch_start(epoch, model=self.model)
+            # Train with metrics
+            train_loss, train_metrics = self.train_epoch(verbose=verbose)
+            logger.info(
+                f"Epoch {epoch + 1}/{self.config.n_epochs} - Train Loss: {train_loss:.4f}"
+            )
+            logger.info(
+                f"  Train IoU: {train_metrics['mean_iou']:.4f}, Train Acc: {train_metrics['accuracy']:.4f}"
+            )
 
-                # Train
-                train_loss, train_metrics = self.train_epoch(verbose=verbose)
-                logger.info(
-                    f"Epoch {epoch + 1}/{self.config.n_epochs} - Train Loss: {train_loss:.4f}"
-                )
-                logger.info(
-                    f"  Train IoU: {train_metrics['mean_iou']:.4f}, Train Acc: {train_metrics['accuracy']:.4f}"
-                )
+            # Validate with metrics
+            val_loss, val_metrics = self.validate(verbose=verbose)
+            logger.info(
+                f"Epoch {epoch + 1}/{self.config.n_epochs} - Val Loss: {val_loss:.4f}"
+            )
+            logger.info(
+                f"  Val IoU: {val_metrics['mean_iou']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}"
+            )
 
-                # Validate
-                val_loss, val_metrics = self.validate(verbose=verbose)
-                logger.info(
-                    f"Epoch {epoch + 1}/{self.config.n_epochs} - Val Loss: {val_loss:.4f}"
-                )
-                logger.info(
-                    f"  Val IoU: {val_metrics['mean_iou']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}"
-                )
+            # Update scheduler
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                self.scheduler.step(val_loss)
+            elif self.scheduler is not None:
+                self.scheduler.step()
 
-                # Update scheduler
-                if isinstance(
-                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
-                ):
-                    self.scheduler.step(val_loss)
-                elif self.scheduler is not None:
-                    self.scheduler.step()
+            current_lr = self.optimizer.param_groups[0]["lr"]
 
-                current_lr = self.optimizer.param_groups[0]["lr"]
+            # === LOGGING ===
+            # Manual logging (for metrics not covered by autologging)
+            self.writer.add_scalar("Loss/train", train_loss, epoch)
+            self.writer.add_scalar("Loss/val", val_loss, epoch)
+            self.writer.add_scalar("Metrics/lr", current_lr, epoch)
 
-                # Prepare metrics dict for callbacks
-                epoch_duration = (
-                    datetime.now(timezone.utc) - epoch_start
-                ).total_seconds()
-                epoch_times.append(epoch_duration)
+            self.writer.add_scalar(
+                "Metrics/train_iou", train_metrics["mean_iou"], epoch
+            )
+            self.writer.add_scalar("Metrics/train_f1", train_metrics["mean_f1"], epoch)
+            self.writer.add_scalar(
+                "Metrics/train_accuracy", train_metrics["accuracy"], epoch
+            )
+            self.writer.add_scalar("Metrics/val_iou", val_metrics["mean_iou"], epoch)
+            self.writer.add_scalar("Metrics/val_f1", val_metrics["mean_f1"], epoch)
+            self.writer.add_scalar(
+                "Metrics/val_accuracy", val_metrics["accuracy"], epoch
+            )
 
-                metrics = {
-                    "train_loss": train_loss,
-                    "val_loss": val_loss,
-                    "train_iou": train_metrics["mean_iou"],
-                    "val_iou": val_metrics["mean_iou"],
-                    "train_f1": train_metrics["mean_f1"],
-                    "val_f1": val_metrics["mean_f1"],
-                    "train_accuracy": train_metrics["accuracy"],
-                    "val_accuracy": val_metrics["accuracy"],
-                    "lr": current_lr,
-                    "epoch_duration": epoch_duration,  # ✅ Add epoch duration to MLflow
-                    **train_metrics,
-                    **val_metrics,
-                }
+            for i, iou in enumerate(val_metrics["iou_per_class"]):
+                self.writer.add_scalar(f"Metrics/class_{i}_iou", iou, epoch)
 
-                # Call epoch end callbacks (handles checkpointing, early stopping, logging)
-                should_stop = False
-                for callback in self.callbacks:
-                    callback.on_epoch_end(
-                        epoch,
-                        metrics,
-                        model=self.model,
-                        optimizer=self.optimizer,
-                        scheduler=self.scheduler,
+            # Memory logging (manual)
+            memory = {}
+            if self.config.log_memory:
+                memory = self.get_memory_usage()
+                if memory:
+                    self.writer.add_scalar(
+                        "Memory/allocated_GB", memory["allocated"], epoch
                     )
-                    # Check if any callback wants to stop
-                    if hasattr(callback, "should_stop") and callback.should_stop:
-                        should_stop = True
+                    self.writer.add_scalar(
+                        "Memory/max_GB",
+                        memory.get("max_allocated", memory["allocated"]),
+                        epoch,
+                    )
+                    logger.info(f"📊 Memory: allocated={memory['allocated']:.2f} GB")
 
-                # Check early stopping from callbacks
-                if should_stop:
-                    logger.info(f"Training stopped by callback at epoch {epoch + 1}")
-                    break
+            # Gradient & Weight Norms (every 5 epochs)
+            if epoch % 5 == 0:
+                grad_norm = compute_gradient_norm(self.model)
+                weight_norm = compute_weight_norm(self.model)
+                self.writer.add_scalar("Norms/gradient", grad_norm, epoch)
+                self.writer.add_scalar("Norms/weights", weight_norm, epoch)
 
-                # Training time tracking
-                logger.info(f"⏱ Epoch duration: {epoch_duration:.1f}s")
+            # MLflow Manual Metrics (for custom metrics not auto-logged)
+            mlflow_metrics = {
+                "train_iou": train_metrics["mean_iou"],
+                "val_iou": val_metrics["mean_iou"],
+                "train_f1": train_metrics["mean_f1"],
+                "val_f1": val_metrics["mean_f1"],
+                "train_accuracy": train_metrics["accuracy"],
+                "val_accuracy": val_metrics["accuracy"],
+            }
+            for i, iou in enumerate(val_metrics["iou_per_class"]):
+                mlflow_metrics[f"val_class_{i}_iou"] = iou
+            if self.config.log_memory and memory:
+                mlflow_metrics["memory_allocated_gb"] = memory["allocated"]
+                mlflow_metrics["memory_max_gb"] = memory.get(
+                    "max_allocated", memory["allocated"]
+                )
 
-        finally:
-            # ✅ Ensure cleanup always runs, even on exception
-            logger.info("Performing final cleanup...")
+            self.mlflow_manager.log_metrics(mlflow_metrics, step=epoch)
 
-            # Cleanup TensorBoard
-            if hasattr(self, "writer") and self.writer is not None:
-                self.writer.close()
-                logger.debug("TensorBoard writer closed")
+            # Training time
+            epoch_duration = (datetime.now(timezone.utc) - epoch_start).total_seconds()
+            self.mlflow_manager.log_metrics(
+                {"epoch_duration_seconds": epoch_duration}, step=epoch
+            )
+            logger.info(f"⏱ Epoch duration: {epoch_duration:.1f}s")
 
-            # Cleanup MLflow
-            if hasattr(self, "mlflow_manager") and self.mlflow_manager is not None:
-                self.mlflow_manager.end_run()
-                logger.debug("MLflow run ended")
+            # Log model checkpoint to MLflow
+            self._log_model_checkpoint(epoch, train_loss, val_loss, val_metrics)
 
-            # Cleanup Memory Manager
-            if hasattr(self, "memory_manager") and self.memory_manager is not None:
-                self.memory_manager.stop()
-                logger.debug("Memory manager stopped")
+            # Early stopping
+            if self.config.early_stopping_patience is not None:
+                current_val_iou = val_metrics["mean_iou"]
+                if (
+                    current_val_iou
+                    > best_val_iou + self.config.early_stopping_min_delta
+                ):
+                    best_val_iou = current_val_iou
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    logger.info(f"New best val IoU: {best_val_iou:.4f}")
+                    # Save best model and update aliases
+                    self._save_best_model(best_val_loss)
+                    self._update_model_aliases(best_val_loss)
+                else:
+                    patience_counter += 1
+                    if patience_counter >= self.config.early_stopping_patience:
+                        logger.info(f"Early stopping triggered at epoch {epoch + 1}")
+                        break
 
-        # Log final summary after cleanup
-        total_time = sum(epoch_times) if epoch_times else 0
-        avg_time = total_time / len(epoch_times) if epoch_times else 0
+            # Checkpoint (existing behavior, but MLflow also logs)
+            if (epoch + 1) % self.config.checkpoint_every == 0:
+                self._save_checkpoint(epoch + 1, train_loss, val_loss)
 
-        logger.info(f"Total training time: {total_time:.1f}s")
-        logger.info(f"Average epoch time: {avg_time:.1f}s")
+            # Sample predictions
+            self._log_sample_predictions(epoch)
+
+        # Final alias update
+        self._update_model_aliases(best_val_loss)
+
+        # Finalize
+        total_time = sum(epoch_times)
+        self.mlflow_manager.log_metrics(
+            {
+                "total_training_time_seconds": total_time,
+                "average_epoch_time_seconds": total_time / len(epoch_times)
+                if epoch_times
+                else 0,
+            },
+            step=epoch,
+        )
+
+        self.writer.close()
+        self.mlflow_manager.end_run()
+
+        logger.info(f"Training completed! Best val_loss: {best_val_loss:.4f}")
+        logger.info(f"Model registry: {self.registry_dir}")
+        logger.info(f"TensorBoard: {self.tb_dir}")
+        logger.info(f"MLflow Run: {run_id}")
+
+        # Summary
         logger.info("=" * 60)
+        logger.info("📊 TRAINING SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Dataset: {self.config.dataset_name}")
+        logger.info(f"Model: {self.model_name}")
+        logger.info(f"Epochs: {len(epoch_times)}")
+        logger.info(f"Best val_loss: {best_val_loss:.4f}")
+        logger.info(f"Best val IoU: {best_val_iou:.4f}")
+        if self.config.log_memory:
+            logger.info(
+                f"Peak memory: {self.get_memory_usage().get('max_allocated', 0):.2f} GB"
+            )
+        logger.info(f"Total training time: {total_time:.1f}s")
+        logger.info("=" * 60)
+
+    def _save_checkpoint(self, epoch: int, train_loss: float, val_loss: float):
+        """Save checkpoint to model registry."""
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        filename = (
+            f"{self.model_name}_{self.config.dataset_name}_epoch_{epoch}_{timestamp}.pt"
+        )
+        save_path = self.registry_dir / filename
+
+        model_to_save = (
+            self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        )
+
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": model_to_save.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict()
+            if self.scheduler
+            else None,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "config": self.config.to_dict(),
+            "model_name": self.model_name,
+            "dataset_name": self.config.dataset_name,
+            "timestamp": timestamp,
+        }
+
+        torch.save(checkpoint, save_path)
+        logger.info(f"Checkpoint saved: {save_path}")
+        self.mlflow_manager.log_artifact(str(save_path), artifact_path="checkpoints")
+
+    def _save_best_model(self, best_val_loss: float):
+        """Save the best model to registry."""
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        filename = f"{self.model_name}_{self.config.dataset_name}_best_{timestamp}.pt"
+        save_path = self.registry_dir / filename
+
+        model_to_save = (
+            self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        )
+
+        torch.save(
+            {
+                "model_state_dict": model_to_save.state_dict(),
+                "val_loss": best_val_loss,
+                "config": self.config.to_dict(),
+                "model_name": self.model_name,
+                "dataset_name": self.config.dataset_name,
+                "timestamp": timestamp,
+            },
+            save_path,
+        )
+
+        logger.info(f"Best model saved: {save_path} (val_loss: {best_val_loss:.4f})")
+
+        # Also save as 'best' without timestamp for easy access
+        best_path = (
+            self.registry_dir / f"{self.model_name}_{self.config.dataset_name}_best.pt"
+        )
+        torch.save(
+            {
+                "model_state_dict": model_to_save.state_dict(),
+                "val_loss": best_val_loss,
+                "config": self.config.to_dict(),
+                "model_name": self.model_name,
+                "dataset_name": self.config.dataset_name,
+                "timestamp": timestamp,
+            },
+            best_path,
+        )
+        self.mlflow_manager.log_artifact(str(best_path), artifact_path="checkpoints")

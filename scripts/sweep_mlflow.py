@@ -364,6 +364,7 @@ class SweepExperiment:
         logger.info(f"Failed: {len(failed)}")
 
         if successful:
+            # Best by val IoU
             best = max(successful, key=lambda x: x.get("metrics", {}).get("val_iou", 0))
             logger.info("\n🏆 Best Experiment:")
             logger.info(f"  Dataset: {best['dataset']}")

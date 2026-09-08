@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
 Training script for seismic FBP with U-Net.
-Refactored to handle frozen config with CLI overrides.
 """
 
 import os
 import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +17,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.factory import create_model
+from src.models.efficient_unet import EfficientUNet
+from src.models.light_unet import LightUNet, NanoUNetLight
+from src.models.mobilenet import MobileUNet
+from src.models.mps_light_unet import MPSLightUNet
+from src.models.nano_unet import NanoUNet
+from src.models.pico_unet import PicoUNet
+from src.models.tiny_unet import TinyUNet
+from src.models.unet import UNet
 from src.preprocessing.chunker import Chunker
 from src.preprocessing.manifest import (
     generate_manifest,
@@ -29,23 +33,8 @@ from src.preprocessing.manifest import (
     validate_manifest,
 )
 from src.preprocessing.processor import ShotProcessor
-from src.training.callbacks import (
-    EarlyStoppingCallback,
-    ModelCheckpointCallback,
-    LoggingCallback,
-    GradientMonitorCallback,
-    Callback,
-)
-from src.training.exceptions import (
-    ModelOutOfMemoryError,
-    ConvergenceError,
-    DataLoadingError,
-    ConfigurationError,
-    CheckpointError,
-)
 from src.training.losses import create_loss_function
 from src.training.trainer import SeismicTrainer
-from src.training.types import TrainingResult
 from src.utils.hdf5_utils import load_shot_indices, validate_hdf5
 from src.utils.logger import create_task_name, setup_logger
 
@@ -71,11 +60,13 @@ from src.utils.logger import create_task_name, setup_logger
             "pico",
         ]
     ),
-    default="mpslight",
+    default="unet",
     help="Model architecture to use",
 )
 @click.option("--dataset", "-ds", help="Override dataset name (for logging)")
-@click.option("--preprocess", "-p", is_flag=True, help="Force preprocessing even if chunks exist")
+@click.option(
+    "--preprocess", "-p", is_flag=True, help="Force preprocessing even if chunks exist"
+)
 @click.option(
     "--class-weights",
     "-cw",
@@ -83,7 +74,12 @@ from src.utils.logger import create_task_name, setup_logger
     type=float,
     help="Override class weights (e.g., --class-weights 0.2 0.2 0.6)",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (sets log_level=DEBUG)",
+)
 @click.option("--log-memory", "-lm", is_flag=True, help="Enable memory logging")
 @click.option(
     "--log-level",
@@ -143,6 +139,7 @@ def main(
     log_level: str,
     loss: str,
     search_best: bool,
+    # NEW PARAMETERS
     checkpoint_every: int,
     early_stopping: int,
     batch_size: int,
@@ -150,59 +147,59 @@ def main(
     lr_scheduler: str,
     learning_rate: float,
     num_workers: int,
-    loss: str,
     dice_weight: float,
     focal_gamma: float,
 ):
-    """Run the training pipeline (CLI wrapper)."""
-    
+    """Run the training pipeline."""
+
     # Load config
     with open(config, "r") as f:
         config_dict: dict[str, Any] = yaml.safe_load(f)
 
-    # ✅ Build config dict with overrides (frozen dataclass compatible)
-    override_dict = config_dict.copy()
+    cfg = SeismicConfig(**config_dict)
 
+    # Override options
     if dataset:
-        override_dict["dataset_name"] = dataset
+        cfg.dataset_name = dataset
     if device:
-        override_dict["device"] = device
+        cfg.device = device
     if epochs:
-        override_dict["n_epochs"] = epochs
+        cfg.n_epochs = epochs
     if preprocess:
-        override_dict["preprocess"] = True
+        cfg.preprocess = True
     if class_weights:
-        override_dict["class_weights"] = list(class_weights)
+        cfg.class_weights = list(class_weights)
     if verbose:
-        override_dict["verbose_training"] = True
-        override_dict["log_level"] = "DEBUG"
+        cfg.verbose_training = True
+        cfg.log_level = "DEBUG"
     if log_memory:
-        override_dict["log_memory"] = True
+        cfg.log_memory = True
     if log_level:
-        override_dict["log_level"] = log_level
+        cfg.log_level = log_level
     if checkpoint_every != 5:
-        override_dict["checkpoint_every"] = checkpoint_every
+        cfg.checkpoint_every = checkpoint_every
     if early_stopping != 5:
-        override_dict["early_stopping_patience"] = early_stopping
+        cfg.early_stopping_patience = early_stopping
     if batch_size:
-        override_dict["batch_size"] = batch_size
+        cfg.batch_size = batch_size
     if cache_size:
-        override_dict["cache_size"] = cache_size
+        cfg.cache_size = cache_size
     if lr_scheduler:
-        override_dict["lr_scheduler"] = lr_scheduler
+        cfg.lr_scheduler = lr_scheduler
     if learning_rate:
-        override_dict["learning_rate"] = learning_rate
+        cfg.learning_rate = learning_rate
     if num_workers:
-        override_dict["num_workers"] = num_workers
+        cfg.num_workers = num_workers
     if loss:
-        override_dict["loss_function"] = loss
+        cfg.loss_function = loss
     if dice_weight is not None:
-        override_dict["dice_weight"] = dice_weight
+        cfg.dice_weight = dice_weight
     if focal_gamma is not None:
-        override_dict["focal_gamma"] = focal_gamma
+        cfg.focal_gamma = focal_gamma
 
-    # ✅ Create config with all overrides
-    cfg = SeismicConfig(**override_dict)
+    # Setup logger with configurable level
+    task_name = create_task_name(cfg, "training", model)
+    logger = setup_logger(task_name=task_name, level=cfg.log_level)
 
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - TRAINING PIPELINE")
@@ -458,9 +455,7 @@ def main(
         criterion=criterion,
         optimizer=optimizer,
         config=cfg,
-        model_name=model,
-        resume_from=resume,
-        mlflow_run_id=mlflow_run_id,
+        model_name=model_name,
     )
 
     # Train
@@ -515,4 +510,3 @@ def main(
 
 if __name__ == "__main__":
     main()
-    

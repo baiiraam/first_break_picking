@@ -15,7 +15,8 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
-from src.models.loader import load_model_from_checkpoint  # ✅ NEW
+from src.models.mps_light_unet import MPSLightUNet
+from src.models.unet import UNet
 from src.utils.logger import create_task_name, setup_logger
 
 
@@ -28,8 +29,8 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--model-type",
     "-t",
-    type=click.Choice(["unet", "mpslight", "light", "nano", "tiny", "pico", "mobile", "efficient"]),
-    default="mpslight",
+    type=click.Choice(["unet", "mpslight"]),
+    default="unet",
     help="Model architecture type",
 )
 @click.option(
@@ -74,7 +75,7 @@ def main(
     # Load model based on type
     device_obj = torch.device(device)
 
-    logger.info("\nLoading model...")
+    logger.info(f"\nInitializing {model_type} model...")
 
     model_obj: UNet | MPSLightUNet
     if model_type == "unet":
@@ -104,7 +105,7 @@ def main(
     model_obj = model_obj.to(device_obj)
     model_obj.eval()
 
-    logger.info("✅ Model ready for export")
+    logger.info("✅ Model loaded successfully")
 
     # Create output directory
     output_dir = Path(output)
