@@ -7,45 +7,21 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
+from src.config import SeismicConfig
+
 
 class ShotProcessor:
     """Process individual shots with vectorized operations and validation."""
 
-    def __init__(
-        self,
-        target_traces: int = 1578,
-        n_samples: int = 751,
-        strip_width: int = 8,
-        log_level: str = "INFO",
-        ignore_index: int = -1,  # 🆕 Add parameter
-        sampling_interval_ms: float = 2.0,  # 🆕 Add parameter
-    ):
-        self.target_traces = target_traces
-        self.n_samples = n_samples
-        self.strip_width = strip_width
-        self.half_width = strip_width // 2
+    def __init__(self, config: SeismicConfig, log_level: str = "INFO"):
+        self.target_traces = config.target_traces
+        self.n_samples = config.n_samples
+        self.strip_width = config.strip_width
+        self.half_width = config.strip_width // 2
         self.log_level = log_level
-        self.ignore_index = ignore_index
+        self.ignore_index = config.ignore_index
+        self.sampling_interval_ms = config.sampling_interval_ms
         self.stats: list[dict[str, Any]] = []
-
-        # 🆕 Auto-detect sampling interval if not provided
-        self.sampling_interval_ms: float
-        if sampling_interval_ms is None:
-            # Auto-detect based on n_samples (common datasets)
-            if n_samples == 751:
-                # Halfmile or Brunswick (1500ms recording)
-                self.sampling_interval_ms = 1500.0 / n_samples  # ~2.0ms
-            elif n_samples == 1501:
-                # Lalor (1500ms recording)
-                self.sampling_interval_ms = 1500.0 / n_samples  # ~1.0ms
-            elif n_samples == 1001:
-                # Sudbury (1000ms recording)
-                self.sampling_interval_ms = 1000.0 / n_samples  # ~1.0ms
-            else:
-                # Default: assume 2ms per sample
-                self.sampling_interval_ms = 2.0
-        else:
-            self.sampling_interval_ms = sampling_interval_ms
 
     def validate_picks(self, picks: np.ndarray) -> tuple[np.ndarray, dict]:
         """
@@ -114,9 +90,8 @@ class ShotProcessor:
         samples = np.arange(self.n_samples).reshape(1, -1)
         picks_expanded = picks.reshape(-1, 1)
 
-        # ✅ FIX: Invalid if pick <= 0 OR pick >= n_samples
-        valid_mask = (picks > 0) & (picks < self.n_samples)  # NOT >=
-        valid_mask_2d = valid_mask.reshape(-1, 1)
+        # ✅ Use broadcasting directly
+        valid_mask = ((picks > 0) & (picks < self.n_samples)).reshape(-1, 1)
 
         # Vectorized conditions for labeled traces
         strip_mask = (samples >= picks_expanded - self.half_width) & (
@@ -125,8 +100,8 @@ class ShotProcessor:
         after_mask = samples > picks_expanded + self.half_width
 
         # Apply to valid traces only
-        mask[valid_mask_2d & strip_mask] = 2
-        mask[valid_mask_2d & after_mask] = 1
+        mask[valid_mask & strip_mask] = 2
+        mask[valid_mask & after_mask] = 1
 
         # Invalid picks become ignore_index
         invalid = (picks <= 0) | (picks >= self.n_samples)

@@ -5,7 +5,6 @@ LRU cache management for chunked dataset with level-based telemetry.
 from collections import OrderedDict
 from typing import Any
 
-import torch
 from loguru import logger
 
 
@@ -67,8 +66,6 @@ class LRUCache:
                 del value["data"]
             if "mask" in value:
                 del value["mask"]
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
             del self.cache[key]
             logger.debug(f"[Cache] EVICTED key={key} (memory freed)")
 

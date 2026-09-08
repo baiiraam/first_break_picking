@@ -7,23 +7,18 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
+from src.config import SeismicConfig
+
 
 class Chunker:
     """Assign shots to chunks and splits."""
 
-    def __init__(
-        self,
-        chunk_size: int = 69,
-        train_split: float = 0.8,
-        val_split: float = 0.1,
-        test_split: float = 0.1,
-        random_seed: int = 42,
-    ):
-        self.chunk_size = chunk_size
-        self.train_split = train_split
-        self.val_split = val_split
-        self.test_split = test_split
-        self.random_seed = random_seed
+    def __init__(self, config: SeismicConfig):
+        self.chunk_size = config.chunk_size
+        self.train_split = config.train_split
+        self.val_split = config.val_split
+        self.test_split = config.test_split
+        self.random_seed = config.random_seed
 
     def assign_splits(self, shot_ids: np.ndarray) -> dict[str, list[int]]:
         """

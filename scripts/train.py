@@ -251,13 +251,7 @@ def main(
             sys.exit(1)
 
         # Phase 2: Chunk Assignment
-        chunker = Chunker(
-            chunk_size=cfg.chunk_size,
-            train_split=cfg.train_split,
-            val_split=cfg.val_split,
-            test_split=cfg.test_split,
-            random_seed=cfg.random_seed,
-        )
+        chunker = Chunker(cfg)
 
         splits = chunker.assign_splits(valid_shots)
 
@@ -273,12 +267,7 @@ def main(
             )
 
         # Phase 3: Processing
-        processor = ShotProcessor(
-            target_traces=cfg.target_traces,
-            n_samples=cfg.n_samples,
-            strip_width=cfg.strip_width,
-            sampling_interval_ms=cfg.sampling_interval_ms,
-        )
+        processor = ShotProcessor(cfg)
 
         chunk_dir.mkdir(parents=True, exist_ok=True)
 

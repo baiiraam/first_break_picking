@@ -215,7 +215,7 @@ class MLflowManager:
                     serialization_format="pickle",
                 )
                 logger.info(f"✅ Fallback successful: {model_info.model_id}")
-            except Exception as e2:
+            except (mlflow.MlflowException, OSError, TypeError) as e2:
                 logger.error(f"❌ Fallback also failed: {e2}")
                 raise
 

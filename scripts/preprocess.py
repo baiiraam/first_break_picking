@@ -65,8 +65,13 @@ def main(config: str, force: bool, dataset: str):
     logger.info(f"Random seed: {cfg.random_seed}")
 
     # Validate HDF5
-    if not validate_hdf5(cfg.hdf5_path):
-        logger.error("HDF5 validation failed. Exiting.")
+    # ✅ Better
+    try:
+        if not validate_hdf5(cfg.hdf5_path):
+            raise FileNotFoundError(f"HDF5 file invalid: {cfg.hdf5_path}")
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        logger.info("Please check the path and file permissions.")
         sys.exit(1)
 
     # Check if preprocessing already exists
@@ -119,13 +124,7 @@ def main(config: str, force: bool, dataset: str):
     logger.info("Phase 2: Chunk Assignment")
     logger.info("=" * 60)
 
-    chunker = Chunker(
-        chunk_size=cfg.chunk_size,
-        train_split=cfg.train_split,
-        val_split=cfg.val_split,
-        test_split=cfg.test_split,
-        random_seed=cfg.random_seed,
-    )
+    chunker = Chunker(cfg)
 
     splits = chunker.assign_splits(valid_shots)
 
@@ -146,12 +145,7 @@ def main(config: str, force: bool, dataset: str):
     logger.info("Phase 3: Processing and Writing Chunks")
     logger.info("=" * 60)
 
-    processor = ShotProcessor(
-        target_traces=cfg.target_traces,
-        n_samples=cfg.n_samples,
-        strip_width=cfg.strip_width,
-        sampling_interval_ms=cfg.sampling_interval_ms,
-    )
+    processor = ShotProcessor(cfg)
 
     # total_chunks = sum(len(c) for c in chunks.values())
     processed_chunks = 0
