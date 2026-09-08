@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import click
 import yaml
@@ -19,7 +20,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.utils.logger import setup_logger
-from src.utils.mlflow_utils import get_mlflow_manager
+from src.utils.mlflow_utils import MLflowManager, get_mlflow_manager
 
 logger = setup_logger(task_name="sweep_mlflow")
 
@@ -34,6 +35,7 @@ class SweepExperiment:
         self.tracking_config = self.config.get("tracking", {})
 
         # Initialize MLflow
+        self.mlflow_manager: MLflowManager | None
         if self.tracking_config.get("enabled", True):
             self.mlflow_manager = get_mlflow_manager(
                 experiment_name=self.tracking_config.get(
@@ -49,10 +51,11 @@ class SweepExperiment:
             self.mlflow_manager = None
             logger.info("ℹ️ MLflow tracking disabled")
 
-    def load_config(self, config_file: str) -> dict:
+    def load_config(self, config_file: str) -> dict[str, Any]:
         """Load configuration from YAML file."""
         with open(config_file, "r") as f:
-            return yaml.safe_load(f)
+            data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else {}
 
     def run_experiment(
         self,
@@ -242,9 +245,9 @@ class SweepExperiment:
 
         return cmd
 
-    def parse_metrics(self, output: str) -> dict:
+    def parse_metrics(self, output: str) -> dict[Any, Any]:
         """Parse metrics from training output."""
-        metrics = {}
+        metrics: dict[Any, Any] = {}
 
         def safe_parse(line: str, prefix: str, key: str) -> None:
             """Safely parse a metric from a line."""

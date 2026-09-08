@@ -792,7 +792,7 @@ def run_auto_batch_training(
     available_gb: float = info.get("available_gb", 8.0)
     device_name: str = info.get("device_name", "CPU")
 
-    recommendations = get_recommended_memory_limits(info)
+    recommendations: dict[str, Any] = get_recommended_memory_limits(info) or {}
 
     # Determine device and available memory
     if info["pytorch"]["cuda_available"] and recommendations["cuda"]:
@@ -909,7 +909,7 @@ def run_auto_batch_training(
 
         # Get dataset info
         dataset_info = get_dataset_info(dataset_name)
-        _, _ = get_actual_data_shape(dataset_name)
+        _actual_traces, _actual_samples = get_actual_data_shape(dataset_name)
 
         # Convert available memory to MB
         available_mb = available_memory_gb * 1024
@@ -1158,9 +1158,13 @@ def run_auto_batch_training(
                 seen = set()
                 unique_variants = []
                 for v in variants:
-                    key = (v["batch_size"], v["cache_size"], v["memory_limit_gb"])
-                    if key not in seen:
-                        seen.add(key)
+                    variant_key = (
+                        v["batch_size"],
+                        v["cache_size"],
+                        v["memory_limit_gb"],
+                    )
+                    if variant_key not in seen:
+                        seen.add(variant_key)
                         unique_variants.append(v)
 
                 dataset_configs[model_name]["variants"] = unique_variants
@@ -1482,18 +1486,18 @@ def run_auto_batch_training(
 @click.option("--preprocess", "-p", is_flag=True, help="Force preprocessing")
 def main(
     config: str,
-    datasets: tuple,
+    datasets: tuple[str, ...],
     list_datasets: bool,
     auto_config: bool,
     manual_config: bool,
-    batch_size: int,
-    cache_size: int,
-    memory_limit: float,
-    epochs: int,
-    device: str,
+    batch_size: int | None,
+    cache_size: int | None,
+    memory_limit: float | None,
+    epochs: int | None,
+    device: str | None,
     log_memory: bool,
     verbose: bool,
-    log_level: str,
+    log_level: str | None,
     preprocess: bool,
 ):
     """Run batch training with auto or manual configuration."""
@@ -1513,7 +1517,7 @@ def main(
         print("\n🔧 MANUAL-CONFIG MODE: Using config from batch_config.yaml")
 
     # Override args
-    override_args = {}
+    override_args: dict[str, Any] = {}
     if epochs is not None:
         override_args["epochs"] = epochs
     if device is not None:

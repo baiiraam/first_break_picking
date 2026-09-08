@@ -2,6 +2,7 @@
 Shot processing logic for seismic data with validation and logging.
 """
 
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -17,7 +18,7 @@ class ShotProcessor:
         strip_width: int = 8,
         log_level: str = "INFO",
         ignore_index: int = -1,  # 🆕 Add parameter
-        sampling_interval_ms: float = None,  # 🆕 Add parameter
+        sampling_interval_ms: float = 2.0,  # 🆕 Add parameter
     ):
         self.target_traces = target_traces
         self.n_samples = n_samples
@@ -25,9 +26,10 @@ class ShotProcessor:
         self.half_width = strip_width // 2
         self.log_level = log_level
         self.ignore_index = ignore_index
-        self.stats = []
-        
+        self.stats: list[dict[str, Any]] = []
+
         # 🆕 Auto-detect sampling interval if not provided
+        self.sampling_interval_ms: float
         if sampling_interval_ms is None:
             # Auto-detect based on n_samples (common datasets)
             if n_samples == 751:
@@ -51,16 +53,16 @@ class ShotProcessor:
         CONVERTS MILLISECONDS TO SAMPLES!
         """
         total = len(picks)
-        
+
         # 🆕 CONVERT FROM MILLISECONDS TO SAMPLES
         picks_samples = picks / self.sampling_interval_ms
-        
+
         # Round to nearest sample
         picks_samples = np.round(picks_samples).astype(np.float32)
-        
+
         # Clip to valid range [0, n_samples-1]
         picks_samples = np.clip(picks_samples, 0, self.n_samples - 1)
-        
+
         # Count valid picks (between 0 and n_samples-1)
         valid_mask = (picks_samples > 0) & (picks_samples < self.n_samples)
         valid_count = np.sum(valid_mask)

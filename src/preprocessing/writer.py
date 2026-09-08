@@ -145,7 +145,7 @@ class ChunkWriter:
                         return False
 
             return True
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error verifying {filepath}: {e}")
             return False
 

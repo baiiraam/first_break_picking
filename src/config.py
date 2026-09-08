@@ -40,7 +40,7 @@ class SeismicConfig:
     gpu_ids: list | None = None
 
     # === Loss ===
-    class_weights: list[float] = field(default_factory=lambda: [0.2, 0.2, 0.6])
+    class_weights: list[float] = field(default_factory=lambda: [0.05, 0.05, 0.9])
 
     # === Model Registry ===
     model_registry_dir: str = "models/registry"
@@ -76,13 +76,14 @@ class SeismicConfig:
     log_gradients: bool = False
 
     # Loss
-    loss_function: str = "cross_entropy"  # cross_entropy, focal, dice, combo
+    loss_function: str = "combo"  # cross_entropy, focal, dice, combo
     dice_weight: float = 0.5
     focal_gamma: float = 2.0
 
     # === Debugging ===
     verbose_training: bool = False
     log_batch_every: int | None = None  # None = disabled
+    sampling_interval_ms: float = 2.0
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -183,7 +184,7 @@ class SeismicConfig:
         """Convert config to YAML string."""
         import yaml
 
-        return yaml.dump(self.to_dict(), default_flow_style=False, indent=2)
+        return str(yaml.dump(self.to_dict(), default_flow_style=False, indent=2))
 
     def __repr__(self) -> str:
         """Human-readable representation."""

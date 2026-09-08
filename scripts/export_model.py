@@ -77,6 +77,7 @@ def main(
 
     logger.info(f"\nInitializing {model_type} model...")
 
+    model_obj: UNet | MPSLightUNet
     if model_type == "unet":
         model_obj = UNet(in_channels=1, out_channels=3)
     elif model_type == "mpslight":
@@ -134,7 +135,7 @@ def main(
             onnx_path = output_dir / f"{model_type}_model.onnx"
             torch.onnx.export(
                 model_obj,
-                example_input,
+                (example_input,),
                 onnx_path,
                 input_names=["input"],
                 output_names=["output"],
@@ -150,10 +151,10 @@ def main(
 
             # Optional: Verify ONNX model
             try:
-                import onnx
+                import onnx as onnx_module
 
-                onnx_model = onnx.load(onnx_path)
-                onnx.checker.check_model(onnx_model)
+                onnx_model = onnx_module.load(onnx_path)
+                onnx_module.checker.check_model(onnx_model)
                 logger.info("  ✅ ONNX model verified")
             except ImportError:
                 logger.info("  ⚠️  ONNX library not installed, skipping verification")

@@ -3,6 +3,8 @@ MPS-optimized lightweight U-Net for seismic segmentation.
 Specifically designed for Apple Silicon MPS memory constraints.
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -98,4 +100,4 @@ class MPSLightUNet(nn.Module):
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
 
-        return out.contiguous()
+        return cast(torch.Tensor, out.contiguous())

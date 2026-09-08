@@ -57,7 +57,7 @@ def get_memory_usage() -> dict:
 def is_memory_low(threshold_gb: float = 2.0) -> bool:
     """Check if available memory is below threshold."""
     mem = psutil.virtual_memory()
-    return mem.available / 1e9 < threshold_gb
+    return bool(mem.available / 1e9 < threshold_gb)
 
 
 def log_memory_stats(prefix: str = ""):

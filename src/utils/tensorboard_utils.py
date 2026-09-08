@@ -35,9 +35,7 @@ class TensorBoardManager:
             step = self.step
         self.writer.add_scalar(tag, value, step)
 
-    def log_scalars(
-        self, tag: str, values: dict[str, float], step: int | None = None
-    ):
+    def log_scalars(self, tag: str, values: dict[str, float], step: int | None = None):
         """Log multiple scalars."""
         if step is None:
             step = self.step
@@ -169,9 +167,7 @@ class TensorBoardManager:
         self.writer.add_figure("Loss/Curves", fig, step)
         plt.close(fig)
 
-    def log_weights_histograms(
-        self, model: torch.nn.Module, step: int | None = None
-    ):
+    def log_weights_histograms(self, model: torch.nn.Module, step: int | None = None):
         """Log weight histograms for model layers."""
         if step is None:
             step = self.step

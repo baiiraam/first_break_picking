@@ -51,6 +51,7 @@ class SeismicTrainer:
         self.device = self._setup_device(config.device)
 
         # Setup model
+        self.model: nn.Module
         if config.multi_gpu and torch.cuda.device_count() > 1:
             self.model = nn.DataParallel(model, device_ids=config.gpu_ids)
             logger.info(f"Multi-GPU enabled: {torch.cuda.device_count()} GPUs")
@@ -82,7 +83,9 @@ class SeismicTrainer:
             enable_autolog=True,
         )
 
-        self.registered_models = {}  # Track registered models for alias management
+        self.registered_models: dict[
+            str, dict[str, Any]
+        ] = {}  # Track registered models for alias management
 
         logger.info(f"Model registry: {self.registry_dir}")
         logger.info(f"TensorBoard: {self.tb_dir}")
@@ -96,7 +99,7 @@ class SeismicTrainer:
                     del test
                     logger.info("MPS device initialized successfully")
                     return torch.device("mps")
-                except Exception as e: # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     logger.warning(
                         f"MPS initialization failed: {e}, falling back to CPU"
                     )
@@ -176,7 +179,7 @@ class SeismicTrainer:
         logger.info(
             f"Resumed from epoch {checkpoint['epoch']} with val_loss={checkpoint.get('val_loss', 'N/A')}"
         )
-        return checkpoint["epoch"]
+        return int(checkpoint["epoch"])
 
     def get_memory_usage(self) -> dict[str, float]:
         """Get current memory usage without sudo."""
@@ -378,7 +381,7 @@ class SeismicTrainer:
             logger.info(
                 f"✅ Model checkpoint logged to MLflow: {model_info.get('model_uri')}"
             )
-        except Exception as e: # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.error(f"❌ Failed to log model checkpoint: {e}")
             import traceback
 
@@ -591,7 +594,7 @@ class SeismicTrainer:
         best_val_loss = float("inf")
         best_val_iou = 0.0
         patience_counter = 0
-        epoch_times = []
+        epoch_times: list[float] = []
 
         for epoch in range(start_epoch, self.config.n_epochs):
             epoch_start = datetime.now(timezone.utc)

@@ -1,618 +1,416 @@
-# Complete Workflow Options for Running the Project
+# Seismic First Break Picking - Technical Explanation
 
-You have multiple options to run the project, from single dataset training to full batch processing. Here's a comprehensive guide to all available workflows.
+## 📋 **What is First Break Picking?**
 
----
+**First break picking** is the process of identifying the first arrival time of seismic waves on a seismogram. This is a critical step in seismic data processing because:
+- It determines the **velocity model** for depth conversion
+- It's used for **static corrections** (weathering and elevation)
+- It helps identify **near-surface anomalies**
+- It's essential for **seismic imaging** quality control
 
-## Option 1: Train a Single Dataset (Halfmile Only)
-
-### Workflow Steps
-
-```bash
-# STEP 1: Preprocess Halfmile
-python scripts/preprocess.py --config configs/halfmile.yaml
-
-# STEP 2: Train Halfmile
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model mpslight \
-    --epochs 30
-
-# STEP 3: Evaluate Halfmile
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --split test
-
-# STEP 4: Visualize Results
-python scripts/visualize.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --n_samples 10
-```
-
-### Visual Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              WORKFLOW: SINGLE DATASET (Halfmile)                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 1: PREPROCESS                                                 │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Input:  data/raw/Halfmile3D_add_geom_sorted.hdf5           │   │    │
-│  │  │  Output: data/chunks/Halfmile/                              │   │    │
-│  │  │          ├── manifest.json                                  │   │    │
-│  │  │          ├── chunk_001_train.pt                             │   │    │
-│  │  │          ├── chunk_002_train.pt                             │   │    │
-│  │  │          ├── chunk_001_val.pt                               │   │    │
-│  │  │          └── chunk_001_test.pt                              │   │    │
-│  │  │  Time: ~3 minutes                                           │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 2: TRAIN                                                      │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Input:  data/chunks/Halfmile/                              │   │    │
-│  │  │  Model:  MPSLightUNet                                       │   │    │
-│  │  │  Output: models/registry/MPSLightUNet_Halfmile_best.pt     │   │    │
-│  │  │  MLflow: Run logged with all metrics                       │   │    │
-│  │  │  Time: ~25-30 minutes                                      │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 3: EVALUATE                                                   │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Input:  models/registry/MPSLightUNet_Halfmile_best.pt      │   │    │
-│  │  │  Output: eval_results/                                      │   │    │
-│  │  │          ├── evaluation_results_Halfmile_*.json            │   │    │
-│  │  │          ├── evaluation_summary_Halfmile_*.csv             │   │    │
-│  │  │          └── detailed_errors_Halfmile_*.csv               │   │    │
-│  │  │  Time: ~2 minutes                                          │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 4: VISUALIZE                                                  │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Output: visualization_results/                              │   │    │
-│  │  │          ├── shot_123_comparison.png                         │   │    │
-│  │  │          ├── shot_124_comparison.png                         │   │    │
-│  │  │          └── ...                                             │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ✅ COMPLETE! (Total: ~30-35 minutes)                                      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Commands for Single Dataset Options
-
-| Dataset | Preprocess | Train | Evaluate |
-|---------|------------|-------|----------|
-| **Halfmile** | `--config configs/halfmile.yaml` | `--config configs/halfmile.yaml` | `--config configs/halfmile.yaml` |
-| **Brunswick** | `--config configs/brunswick.yaml` | `--config configs/brunswick.yaml` | `--config configs/brunswick.yaml` |
-| **Lalor** | `--config configs/lalor.yaml` | `--config configs/lalor.yaml` | `--config configs/lalor.yaml` |
-| **Sudbury** | `--config configs/sudbury.yaml` | `--config configs/sudbury.yaml` | `--config configs/sudbury.yaml` |
+### **The Challenge**
+Traditionally, first break picking is done manually by geophysicists, which is:
+- **Time-consuming**: Thousands of traces per survey
+- **Subjective**: Different interpreters may pick differently
+- **Error-prone**: Noisy data makes picking difficult
+- **Expensive**: Requires skilled personnel
 
 ---
 
-## Option 2: Train Two Datasets (Halfmile + Brunswick)
+## 🎯 **Our Approach: Deep Learning Segmentation**
 
-### Using Batch Training
+Instead of directly predicting the pick time (regression), we reformulate the problem as **3-class semantic segmentation**:
 
-```bash
-# Single command for both datasets
-python scripts/batch_train.py \
-    --datasets Halfmile \
-    --datasets Brunswick \
-    --epochs 30 \
-    --log-memory
+### **Class Definitions**
+| Class | Label | Description | Color |
+|-------|-------|-------------|-------|
+| **Class 0** | Before | Samples before the first break | Blue |
+| **Class 1** | After | Samples after the first break | Green |
+| **Class 2** | Strip | A narrow band around the first break | Red |
 
-# The batch script handles:
-# - Preprocessing (if chunks don't exist)
-# - Sequential training
-# - Memory error recovery
-# - Automatic fallback configurations
-```
-
-### Visual Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│         WORKFLOW: TWO DATASETS (Halfmile + Brunswick)                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 1: Preprocess Halfmile (if not already done)                 │    │
-│  │  → data/chunks/Halfmile/                                           │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 2: Preprocess Brunswick (if not already done)                │    │
-│  │  → data/chunks/Brunswick/                                          │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 3: Train Halfmile                                            │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                    │   │    │
-│  │  │  ✅ SUCCESS → Save model                                    │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 4: Train Brunswick                                           │    │
-│  │  ┌──────────────────────────────────────────────────────────────┐   │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                    │   │    │
-│  │  │  ✅ SUCCESS → Save model                                    │   │    │
-│  │  └──────────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  STEP 5: Summary Report                                             │    │
-│  │  ✅ Successful: 2/2 datasets                                        │    │
-│  │  ⏱ Total time: ~55-60 minutes                                      │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Manual Sequential Training
-
-```bash
-# Train Halfmile first
-python scripts/train.py --config configs/halfmile.yaml --model mpslight --epochs 30
-
-# Then train Brunswick
-python scripts/train.py --config configs/brunswick.yaml --model mpslight --epochs 30
-
-# Evaluate both
-python scripts/evaluate.py --config configs/halfmile.yaml --model best --split test
-python scripts/evaluate.py --config configs/brunswick.yaml --model best --split test
-```
+### **Why Segmentation?**
+1. **Spatial Context**: The model considers neighboring traces and samples
+2. **Robustness**: Segmentation is more robust to noise than direct pick prediction
+3. **Uncertainty**: The strip width provides a measure of pick uncertainty
+4. **Class Imbalance**: The strip class is rare, making it a focused learning target
 
 ---
 
-## Option 3: Train All Four Datasets
+## 🔬 **The Data Pipeline**
 
-### Using Batch Training (Recommended)
-
-```bash
-# Train all datasets with default config
-python scripts/batch_train.py
-
-# Train all datasets with custom settings
-python scripts/batch_train.py \
-    --config configs/batch_config.yaml \
-    --epochs 40 \
-    --log-memory \
-    --verbose
-
-# Train all datasets with specific overrides
-python scripts/batch_train.py \
-    --epochs 50 \
-    --device mps \
-    --log-memory \
-    --verbose \
-    --log-level DEBUG
+### **1. Input Data (HDF5 Format)**
+Each dataset is stored as an HDF5 file with the following structure:
+```
+TRACE_DATA/
+└── DEFAULT/
+    ├── SHOTID      # Shot ID for each trace
+    ├── data_array  # Seismic amplitudes (n_traces × n_samples)
+    └── SPARE1      # First break picks (in milliseconds)
 ```
 
-### Visual Workflow
+### **2. Shot-Level Processing**
+
+For each shot, the pipeline:
+1. **Extracts** the shot data and picks
+2. **Converts** picks from milliseconds to samples
+3. **Creates** a 3-class mask
+4. **Pads/Crops** to a fixed number of traces
+5. **Validates** mask quality
+
+### **3. Critical: Unit Conversion**
+
+The most important preprocessing step is converting `SPARE1` from **milliseconds to samples**:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              WORKFLOW: ALL FOUR DATASETS                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  PHASE 1: PREPROCESS ALL DATASETS (Sequential)                     │    │
-│  │                                                                     │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────┐ │    │
-│  │  │  Brunswick   │  │  Halfmile    │  │   Lalor      │  │ Sudbury  │ │    │
-│  │  │  ┌────────┐  │  │  ┌────────┐  │  │  ┌────────┐  │  │ ┌──────┐ │ │    │
-│  │  │  │Chunk 1 │  │  │  │Chunk 1 │  │  │  │Chunk 1 │  │  │ │Chunk1│ │ │    │
-│  │  │  │Chunk 2 │  │  │  │Chunk 2 │  │  │  │Chunk 2 │  │  │ │Chunk2│ │ │    │
-│  │  │  │Chunk 3 │  │  │  │Chunk 3 │  │  │  │Chunk 3 │  │  │ │Chunk3│ │ │    │
-│  │  │  │Chunk 4 │  │  │  │Chunk 4 │  │  │  │Chunk 4 │  │  │ │Chunk4│ │ │    │
-│  │  │  └────────┘  │  │  └────────┘  │  │  └────────┘  │  │ └──────┘ │ │    │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────┘ │    │
-│  │  Time: ~14 minutes                                                 │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  PHASE 2: TRAIN ALL DATASETS (Sequential with Memory Recovery)      │    │
-│  │                                                                     │    │
-│  │  Dataset 1: Brunswick                                              │    │
-│  │  ┌────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                 │    │    │
-│  │  │  ✅ SUCCESS (25 minutes)                                  │    │    │
-│  │  └────────────────────────────────────────────────────────────┘    │    │
-│  │                                                                     │    │
-│  │  Dataset 2: Halfmile                                              │    │
-│  │  ┌────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                 │    │    │
-│  │  │  ✅ SUCCESS (20 minutes)                                  │    │    │
-│  │  └────────────────────────────────────────────────────────────┘    │    │
-│  │                                                                     │    │
-│  │  Dataset 3: Lalor                                                 │    │
-│  │  ┌────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                 │    │    │
-│  │  │  ❌ Out of Memory                                         │    │    │
-│  │  │  Attempt 2: batch_size=2, model=mpslight                 │    │    │
-│  │  │  ❌ Out of Memory                                         │    │    │
-│  │  │  Attempt 3: batch_size=1, model=mpslight                 │    │    │
-│  │  │  ❌ Out of Memory                                         │    │    │
-│  │  │  Attempt 4: batch_size=1, model=tiny                    │    │    │
-│  │  │  ✅ SUCCESS (15 minutes)                                 │    │    │
-│  │  └────────────────────────────────────────────────────────────┘    │    │
-│  │                                                                     │    │
-│  │  Dataset 4: Sudbury                                              │    │
-│  │  ┌────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Attempt 1: batch_size=4, model=mpslight                 │    │    │
-│  │  │  ✅ SUCCESS (18 minutes)                                  │    │    │
-│  │  └────────────────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  PHASE 3: SUMMARY & OUTPUT                                          │    │
-│  │                                                                     │    │
-│  │  ✅ Successful: 4/4 datasets                                       │    │
-│  │  ⏱ Total time: ~80-95 minutes                                     │    │
-│  │                                                                     │    │
-│  │  Models Saved:                                                     │    │
-│  │  • models/registry/MPSLightUNet_Brunswick_best.pt                 │    │
-│  │  • models/registry/MPSLightUNet_Halfmile_best.pt                  │    │
-│  │  • models/registry/TinyUNet_Lalor_best.pt                         │    │
-│  │  • models/registry/MPSLightUNet_Sudbury_best.pt                   │    │
-│  │                                                                     │    │
-│  │  MLflow: 4 runs logged                                            │    │
-│  │  TensorBoard: 4 runs                                               │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Sampling Interval = Recording Time / Number of Samples
+Sample Index = SPARE1 / Sampling Interval
 ```
+
+**Example (Halfmile)**:
+```
+Recording Time: 1500ms
+Samples: 751
+Sampling Interval: 1500/751 = 2.0 ms/sample
+SPARE1 = 881ms → 881/2.0 = 440 samples ✅ Valid (0-750)
+```
+
+**Without this conversion**, the model would learn the wrong positions!
+
+### **4. Mask Creation**
+
+The mask is created using vectorized operations:
+
+```python
+# Class mapping:
+# -1: Unlabeled (ignored in training)
+#  0: Before (samples < pick - half_width)
+#  2: Strip (pick - half_width ≤ samples ≤ pick + half_width)
+#  1: After (samples > pick + half_width)
+
+for each trace:
+    strip_mask = (samples >= pick - half_width) & (samples <= pick + half_width)
+    after_mask = samples > pick + half_width
+    
+    mask[strip_mask] = 2
+    mask[after_mask] = 1
+    mask[invalid_picks] = -1
+```
+
+### **5. Chunking & Caching**
+
+**Why chunking?**
+- Individual HDF5 files are too large to load entirely in memory
+- Training requires random access to shots
+- Chunking enables efficient shuffling and batching
+
+**Chunk Structure**:
+```
+chunk_001_train.pt
+├── data: (69 × 1578 × 751) float32  # 69 shots
+├── mask: (69 × 1578 × 751) int64
+├── shot_ids: list[int]
+├── split: "train"
+└── chunk_id: 1
+```
+
+**LRU Cache**:
+- Caches recently used chunks in memory
+- Configurable size (default: 5 chunks)
+- Automatically evicts oldest chunks when full
+- Dramatically speeds up training
 
 ---
 
-## Option 4: Preprocess + Train All Datasets with Custom Configuration
+## 🏗️ **Model Architecture: U-Net Family**
 
-### Using `batch_config.yaml` with Overrides
+### **Base U-Net Architecture**
 
-```yaml
-# configs/batch_config.yaml
-datasets:
-  Brunswick:
-    epochs: 40
-    log_memory: true
-  
-  Halfmile:
-    log_level: "DEBUG"
-    batch_size_override: 2  # Force smaller batch
-  
-  Lalor:
-    batch_size_override: 2
-    model_override: "tiny"
-    timeout_seconds: 10800  # 3 hours for large dataset
-  
-  Sudbury:
-    epochs: 25
-    device: "cpu"  # Train on CPU to save GPU memory
-```
-
-```bash
-# Run with custom config
-python scripts/batch_train.py --config configs/batch_config.yaml --verbose
-```
-
-### Output Example
+U-Net is ideal for segmentation tasks because it:
+1. **Preserves spatial information** through skip connections
+2. **Captures multi-scale features** via the encoder-decoder structure
+3. **Outputs same resolution** as input (pixel-wise classification)
 
 ```
-================================================================================
-🚀 BATCH TRAINING PIPELINE
-================================================================================
-Config file: configs/batch_config.yaml
-Datasets: ['Brunswick', 'Halfmile', 'Lalor', 'Sudbury']
-Epochs: 30
-Device: mps
-Log memory: True
-Verbose: True
-Log level: INFO
-Checkpoint every: 1
-Early stopping: 5
-Config variants: 6
-Skip failed: True
-Timeout: 7200s
-================================================================================
-
-================================================================================
-📊 DATASET 1/4: Brunswick
-================================================================================
-💾 Memory before: 6.4GB / 17.2GB (43.7%)
-
-  🔄 Attempt 1/6: {'batch_size': 4, 'model': 'mpslight', 'cache_size': 3}
-  ✅ SUCCESS! Dataset Brunswick trained successfully
-  ⏱ Duration: 245.3s
-🧹 Clearing memory...
-
-================================================================================
-📊 DATASET 2/4: Halfmile
-================================================================================
-💾 Memory before: 6.4GB / 17.2GB (43.6%)
-
-  🔄 Attempt 1/6: {'batch_size': 2, 'model': 'mpslight', 'cache_size': 2}  # ← Override applied
-  ✅ SUCCESS! Dataset Halfmile trained successfully
-  ⏱ Duration: 312.7s
-🧹 Clearing memory...
-
-================================================================================
-📊 DATASET 3/4: Lalor
-================================================================================
-💾 Memory before: 6.5GB / 17.2GB (44.1%)
-
-  🔄 Attempt 1/6: {'batch_size': 2, 'model': 'mpslight', 'cache_size': 2}  # ← Override applied
-  ❌ Failed: RuntimeError: MPS out of memory
-  🔄 Memory error detected, trying next variant
-
-  🔄 Attempt 2/6: {'batch_size': 1, 'model': 'mpslight', 'cache_size': 1}
-  ❌ Failed: RuntimeError: MPS out of memory
-  🔄 Memory error detected, trying next variant
-
-  🔄 Attempt 3/6: {'batch_size': 1, 'model': 'tiny', 'cache_size': 1}  # ← Override applied
-  ✅ SUCCESS! Dataset Lalor trained successfully
-  ⏱ Duration: 180.5s
-🧹 Clearing memory...
-
-================================================================================
-📊 DATASET 4/4: Sudbury
-================================================================================
-💾 Memory before: 6.5GB / 17.2GB (43.9%)
-
-  🔄 Attempt 1/6: {'batch_size': 4, 'model': 'mpslight', 'cache_size': 3}
-  ✅ SUCCESS! Dataset Sudbury trained successfully
-  ⏱ Duration: 198.2s
-🧹 Clearing memory...
-
-================================================================================
-📊 BATCH TRAINING SUMMARY
-================================================================================
-
-✅ Successful: 4/4
-  • Brunswick: mpslight (batch_size=4)
-  • Halfmile: mpslight (batch_size=2)
-  • Lalor: tiny (batch_size=1)
-  • Sudbury: mpslight (batch_size=4)
-
-⏱ Total time: 15.2 minutes
-
-📁 Summary saved to: logs/batch/batch_summary_20260901_123456.json
-================================================================================
+Input: (B, 1, H, W)
+         │
+    ┌────▼────┐
+    │ Encoder │  → Downsampling (captures context)
+    │  (↓2×)  │
+    └────┬────┘
+         │
+    ┌────▼────┐
+    │Bottleneck│  → Deepest features
+    └────┬────┘
+         │
+    ┌────▼────┐
+    │ Decoder │  → Upsampling + Skip connections
+    │  (↑2×)  │
+    └────┬────┘
+         │
+    ┌────▼────┐
+    │ Output  │  → (B, 3, H, W) segmentation mask
+    └─────────┘
 ```
+
+### **Model Variants**
+
+| Model | Params | Speed | Memory | Best For |
+|-------|--------|-------|--------|----------|
+| **PicoUNet** | 2K | ⚡ Instant | 🟢 Low | Testing pipeline |
+| **NanoUNet** | 10K | ⚡ Very Fast | 🟢 Low | Quick validation |
+| **TinyUNet** | 50K | ⚡ Fast | 🟢 Low | Rapid prototyping |
+| **MPSLightUNet** | 1.7M | 🔥 2× Faster | 🟡 Medium | **Apple Silicon** |
+| **LightUNet** | 2.5M | 🔥 2× Faster | 🟡 Medium | Balanced performance |
+| **MobileUNet** | 3.5M | 🟡 Moderate | 🟠 High | Transfer learning |
+| **EfficientUNet** | 5M | 🟡 Moderate | 🟠 High | Transfer learning |
+| **Full UNet** | 31M | 🐢 Slow | 🔴 Very High | Maximum capacity |
+
+### **Why Multiple Variants?**
+
+Different projects have different constraints:
+- **Limited GPU memory** → Use smaller models
+- **Training time constraints** → Use faster models
+- **High accuracy requirement** → Use larger models
+- **MPS (Apple Silicon)** → Use MPSLightUNet
 
 ---
 
-## Option 5: Quick Test with Small Model (Development)
+## 🧮 **Loss Functions**
 
-### For Quick Validation
+### **Problem: Class Imbalance**
 
-```bash
-# Test preprocessing on one dataset
-python scripts/preprocess.py --config configs/halfmile.yaml
+The 3 classes are highly imbalanced:
+- **Strip (Class 2)**: Only ~1% of pixels
+- **Before (Class 0)**: ~20% of pixels
+- **After (Class 1)**: ~70% of pixels
 
-# Quick train with tiny model (only 5 epochs)
-python scripts/train.py \
-    --config configs/halfmile.yaml \
-    --model tiny \
-    --epochs 5 \
-    --verbose
+If we use standard Cross Entropy, the model will ignore the strip class.
 
-# Quick evaluation
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/TinyUNet_Halfmile_best.pt \
-    --split test
+### **Solution: Combo Loss**
+
+We combine three loss functions:
+
+**1. Weighted Cross Entropy**
+```
+Loss_CE = -Σ w_c * y_c * log(p_c)
+```
+- Gives higher weight to the strip class
+
+**2. Focal Loss**
+```
+Loss_Focal = -α * (1 - p_t)^γ * log(p_t)
+```
+- Focuses on hard-to-classify examples
+- Reduces the contribution of easy examples
+
+**3. Dice Loss**
+```
+Loss_Dice = 1 - (2 * |A∩B|) / (|A| + |B|)
+```
+- Directly optimizes IoU
+- Handles class imbalance naturally
+
+**Final Loss**:
+```
+Loss_Combo = (1 - dice_weight) * (0.5*Loss_CE + 0.5*Loss_Focal) 
+           + dice_weight * Loss_Dice
 ```
 
-### For Debugging
+### **Ignore Index: Handling Unlabeled Data**
 
-```bash
-# Debug mode with verbose logging
-python scripts/batch_train.py \
-    --datasets Halfmile \
-    --epochs 5 \
-    --model tiny \
-    --verbose \
-    --log-level DEBUG \
-    --log-memory
+Unlabeled traces are assigned `-1` in the mask:
+- They are **ignored** in loss computation
+- They do **not** contribute to gradients
+- This prevents the model from learning from bad data
 
-# This will show:
-# - Every batch processed
-# - Memory usage at each step
-# - Detailed error messages
-# - Cache hit/miss rates
-```
+**All loss functions correctly handle `-1` values.**
 
 ---
 
-## Option 6: Run Only Preprocessing (No Training)
+## 📊 **Evaluation Metrics**
 
-### Preprocess Specific Datasets
+### **Segmentation Metrics**
 
-```bash
-# Preprocess a single dataset
-python scripts/preprocess.py --config configs/halfmile.yaml
+| Metric | Description | Interpretation |
+|--------|-------------|----------------|
+| **Pixel Accuracy** | Correct predictions / Total pixels | Overall performance |
+| **Mean IoU** | Average IoU across classes | Segmentation quality |
+| **Mean F1** | Average F1 across classes | Balance of precision/recall |
+| **Class-wise IoU** | IoU per class | Strip IoU (most important!) |
 
-# Preprocess multiple datasets
-for dataset in brunswick halfmile lalor sudbury; do
-    python scripts/preprocess.py --config configs/${dataset}.yaml
-done
+**Class 2 (Strip) IoU is the most important metric** because it directly measures pick accuracy.
 
-# Force reprocess (overwrites existing chunks)
-python scripts/preprocess.py --config configs/halfmile.yaml --force
+### **First Break Metrics**
+
+From the segmentation mask, we extract the pick position:
+```
+pick = median(strip_indices)
 ```
 
-### Preprocess Output Structure
-
-```
-data/chunks/Halfmile/
-├── manifest.json                    # Metadata
-├── chunk_001_train.pt              # Training data (69 shots)
-├── chunk_002_train.pt              # Training data (44 shots)
-├── chunk_001_val.pt                # Validation data (14 shots)
-└── chunk_001_test.pt               # Test data (15 shots)
-```
+Then we compute:
+| Metric | Description |
+|--------|-------------|
+| **Mean Absolute Error (MAE)** | Average pick error in samples |
+| **Std Error** | Variability of errors |
+| **Accuracy within ±3 samples** | % of picks within 3 samples |
+| **Error Distribution** | Percentiles of errors |
 
 ---
 
-## Option 7: Run Only Evaluation (Skip Training)
+## 🚀 **Training Pipeline**
 
-### Evaluate Existing Models
+### **1. Hardware Detection**
 
-```bash
-# Evaluate best model from MLflow
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model best \
-    --split test \
-    --detailed
+The system automatically detects:
+- **Device Type**: MPS, CUDA, or CPU
+- **Memory Available**: RAM, GPU memory, MPS limits
+- **Optimal Settings**: Batch size, cache size, memory limit
 
-# Evaluate specific checkpoint
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --split test
+### **2. Auto-Configuration**
 
-# Evaluate all splits
-python scripts/evaluate.py \
-    --config configs/halfmile.yaml \
-    --model best \
-    --split all
+Based on hardware and dataset characteristics:
 
-# Compare multiple models
-python scripts/search_models.py --dataset Halfmile --compare --top 5
+```python
+available_mb = memory_gb * 1024
+base_memory_mb = model_profile.base_memory_mb
+safe_remaining_mb = (available_mb - base_memory_mb) * 0.8
+
+optimal_batch = min(
+    safe_remaining_mb / memory_per_batch_mb, recommended_batch, total_shots
+)
+
+optimal_cache = min(remaining_mb / memory_per_cache_mb, recommended_cache, num_chunks)
 ```
+
+### **3. MPS Warmup**
+
+On Apple Silicon, the first forward pass triggers JIT compilation:
+- **Duration**: 2-10 minutes (normal!)
+- **Why**: Shaders are compiled on first use
+- **After warmup**: Training is 2× faster than CPU
+
+### **4. Training Loop**
+
+Each epoch:
+1. **Training Phase**:
+   - Forward pass → Compute loss → Backward pass
+   - Update metrics (IoU, F1, Accuracy)
+   - Log to TensorBoard & MLflow
+
+2. **Validation Phase**:
+   - No gradients (evaluation mode)
+   - Compute validation loss and metrics
+   - Check for early stopping
+
+3. **Logging**:
+   - TensorBoard: Loss curves, metrics, images
+   - MLflow: Parameters, metrics, model versions
+   - Console: Progress bars, summary
+
+### **5. Error Recovery**
+
+If memory error occurs:
+1. **Clear memory**: Empty cache, garbage collect
+2. **Try next variant**: Reduce batch size, cache size, or memory limit
+3. **Progress fallback**: 5 levels (Optimal → Minimal)
+4. **Skip dataset**: Continue to next dataset if all variants fail
 
 ---
 
-## Option 8: Export Models for Production
+## 📦 **Model Versioning (MLflow)**
 
-### Export Trained Models
+### **Model Registry**
 
-```bash
-# Export best model to ONNX + TorchScript
-python scripts/export_model.py \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --onnx \
-    --torchscript \
-    --output production_models
+Each trained model is registered with:
+- **Version**: Auto-incremented
+- **Aliases**: `champion`, `challenger`, `staging`
+- **Tags**: Dataset, model type, epoch, loss, metrics
+- **Artifacts**: Model weights, config, sample predictions
 
-# Export specific model type
-python scripts/export_model.py \
-    --model models/registry/MPSLightUNet_Halfmile_best.pt \
-    --model-type mpslight \
-    --onnx
+### **Alias Management**
 
-# Export from MLflow champion
-python scripts/export_model.py \
-    --model models:/halfmile@champion \
-    --onnx \
-    --torchscript \
-    --output production_models
-```
+| Alias | Description |
+|-------|-------------|
+| **champion** | Best performing model |
+| **challenger** | Current model being evaluated |
+| **staging** | Latest model (intermediate) |
+
+When a new model outperforms the champion:
+1. Old champion → `challenger`
+2. New model → `champion`
+3. Latest model → `staging`
 
 ---
 
-## Summary: All Options Comparison
+## 🔧 **Key Technical Decisions**
 
-| Option | Command | Time | Use Case |
-|--------|---------|------|----------|
-| **Single Dataset** | `python scripts/train.py --config configs/halfmile.yaml` | ~30 min | Testing, development |
-| **Two Datasets** | `python scripts/batch_train.py --datasets Halfmile --datasets Brunswick` | ~60 min | Parallel development |
-| **All Datasets** | `python scripts/batch_train.py` | ~90 min | Production training |
-| **Custom Config** | `python scripts/batch_train.py --config configs/batch_config.yaml` | ~90 min | Customized training |
-| **Quick Test** | `python scripts/train.py --config configs/halfmile.yaml --model tiny --epochs 5` | ~5 min | Debugging, testing |
-| **Preprocess Only** | `python scripts/preprocess.py --config configs/halfmile.yaml` | ~3 min | Data preparation |
-| **Evaluate Only** | `python scripts/evaluate.py --config configs/halfmile.yaml --model best` | ~2 min | Model validation |
-| **Export Only** | `python scripts/export_model.py --model model.pt --onnx` | ~1 min | Production deployment |
+### **1. Why Segmentation over Regression?**
+
+| Aspect | Regression | Segmentation |
+|--------|------------|--------------|
+| **Output** | Single value | Full spatial map |
+| **Context** | Limited | Full trace context |
+| **Robustness** | Lower | Higher |
+| **Uncertainty** | Hard to estimate | Strip width provides uncertainty |
+
+### **2. Why 3 Classes instead of Binary?**
+
+Binary (Before/After) would lose information about pick location. The strip class:
+- Provides a **target region** for the model to learn
+- Gives a **measure of uncertainty** (strip width)
+- Makes the problem **easier to learn** (8 samples vs exact point)
+
+### **3. Why Ignore Unlabeled Traces?**
+
+Some traces have invalid picks:
+- **No pick**: SPARE1 = 0 or -1
+- **Bad pick**: Out of range
+- **Low quality**: Unreliable label
+
+Ignoring them:
+- Prevents the model from learning from bad data
+- Maintains training stability
+- Does not waste capacity on poor labels
+
+### **4. Why Chunking?**
+
+| Without Chunking | With Chunking |
+|------------------|---------------|
+| Load entire dataset | Load chunks on-demand |
+| High memory usage | Memory efficient |
+| Slow shuffling | Fast random access |
+| Limited dataset size | Handles large datasets |
 
 ---
 
-## Quick Reference: Most Common Commands
+## 🎯 **Expected Results**
 
-```bash
-# 1. Train Halfmile only (most common for testing)
-python scripts/train.py --config configs/halfmile.yaml --model mpslight --epochs 30
+### **Typical Performance**
 
-# 2. Train all datasets (production)
-python scripts/batch_train.py --epochs 30 --log-memory
+| Model | Epochs | Val IoU | Strip IoU | MAE (samples) |
+|-------|--------|---------|-----------|---------------|
+| PicoUNet | 2 | 0.3-0.4 | 0.2-0.3 | 3-5 |
+| PicoUNet | 30 | 0.4-0.5 | 0.3-0.4 | 2-3 |
+| MPSLightUNet | 30 | 0.5-0.6 | 0.4-0.5 | 1-2 |
+| UNet | 30 | 0.6-0.7 | 0.5-0.6 | <1 |
 
-# 3. Train specific datasets
-python scripts/batch_train.py --datasets Halfmile --datasets Brunswick
+### **Training Time**
 
-# 4. Evaluate the best model
-python scripts/evaluate.py --config configs/halfmile.yaml --model best --split test
-
-# 5. Quick test with tiny model
-python scripts/train.py --config configs/halfmile.yaml --model tiny --epochs 5 --verbose
-
-# 6. Preprocess and train with verbose debug
-python scripts/batch_train.py --verbose --log-level DEBUG --log-memory
-
-# 7. Visualize predictions
-python scripts/visualize.py --config configs/halfmile.yaml --model best --n_samples 10
-```
+| Model | Epoch Time | 30 Epochs |
+|-------|------------|-----------|
+| PicoUNet | ~10 seconds | ~5 minutes |
+| MPSLightUNet | ~5 minutes | ~2.5 hours |
+| UNet | ~10 minutes | ~5 hours |
 
 ---
 
-## Decision Tree: Which Option to Choose?
+## ✅ **Summary: Preprocessing Fix Confirmed**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    DECISION TREE FOR OPTIONS                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  START                                                                     │
-│    │                                                                        │
-│    ▼                                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  What is your goal?                                                  │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│    │                                                                        │
-│    ├── "Test if the pipeline works"                                        │
-│    │   └──➤ Use Quick Test: python scripts/train.py --model tiny --epochs 5│
-│    │                                                                        │
-│    ├── "Train a single dataset"                                            │
-│    │   └──➤ Use Single Dataset: python scripts/train.py --config halfmile│
-│    │                                                                        │
-│    ├── "Train multiple datasets"                                           │
-│    │   └──➤ Use Batch Training: python scripts/batch_train.py             │
-│    │                                                                        │
-│    ├── "Debug or investigate"                                              │
-│    │   └──➤ Use Verbose Mode: --verbose --log-level DEBUG --log-memory   │
-│    │                                                                        │
-│    ├── "Prepare data only"                                                 │
-│    │   └──➤ Use Preprocess Only: python scripts/preprocess.py             │
-│    │                                                                        │
-│    ├── "Validate trained model"                                            │
-│    │   └──➤ Use Evaluate Only: python scripts/evaluate.py --model best   │
-│    │                                                                        │
-│    └── "Deploy to production"                                              │
-│        └──➤ Use Export: python scripts/export_model.py --onnx --torchscript│
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-This gives you full flexibility to run exactly what you need, from quick tests to full production training!
+| Issue | Status | Verification |
+|-------|--------|--------------|
+| **Unit mismatch** | ✅ Fixed | SPARE1 converted from ms to samples |
+| **All picks valid** | ✅ Verified | 0 out-of-bounds errors |
+| **Mask classes** | ✅ Correct | -1, 0, 1, 2 present |
+| **Strip placement** | ✅ Accurate | 1.07% of pixels (matches strip_width) |
+| **Ignore index** | ✅ Working | Loss functions handle -1 |
+| **Sampling interval** | ✅ Configurable | Per-dataset settings |

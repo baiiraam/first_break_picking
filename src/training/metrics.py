@@ -2,7 +2,6 @@
 Evaluation metrics for seismic FBP.
 """
 
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -43,7 +42,7 @@ class SegmentationMetrics:
                 self.confusion_matrix[t, p] += 1
             self.total_pixels += 1
 
-    def compute(self) -> dict[str, float]:
+    def compute(self) -> dict[str, float | list[float]]:
         """Compute all metrics."""
         cm = self.confusion_matrix
 
@@ -168,7 +167,7 @@ def compute_gradient_norm(model: nn.Module) -> float:
         if p.grad is not None:
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
-    return total_norm**0.5
+    return float(total_norm**0.5)
 
 
 def compute_weight_norm(model: nn.Module) -> float:
@@ -177,7 +176,7 @@ def compute_weight_norm(model: nn.Module) -> float:
     for p in model.parameters():
         param_norm = p.data.norm(2)
         total_norm += param_norm.item() ** 2
-    return total_norm**0.5
+    return float(total_norm**0.5)
 
 
 def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:

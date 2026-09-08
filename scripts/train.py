@@ -6,6 +6,7 @@ Training script for seismic FBP with U-Net.
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 import torch
@@ -47,7 +48,17 @@ from src.utils.logger import create_task_name, setup_logger
     "--model",
     "-m",
     type=click.Choice(
-        ["unet", "efficient", "mobile", "light", "nano", "mpslight", "tiny", "pico"]
+        [
+            "unet",
+            "efficient",
+            "mobile",
+            "light",
+            "nano",
+            "nano-light",
+            "mpslight",
+            "tiny",
+            "pico",
+        ]
     ),
     default="unet",
     help="Model architecture to use",
@@ -76,30 +87,12 @@ from src.utils.logger import create_task_name, setup_logger
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     help="Override log level",
 )
-@click.option("--disable-autolog", is_flag=True, help="Disable MLflow autologging")
-@click.option(
-    "--disable-system-metrics",
-    is_flag=True,
-    help="Disable MLflow system metrics logging",
-)
 @click.option(
     "--search-best", is_flag=True, help="Search for best model after training"
 )
 # ============================================================
 # ADD THESE NEW OPTIONS
 # ============================================================
-@click.option(
-    "--checkpoint-every",
-    "-ce",
-    type=int,
-    default=5,
-    help="Save checkpoint every N epochs",
-)
-@click.option(
-    "--early-stopping", "-es", type=int, default=5, help="Early stopping patience"
-)
-@click.option("--batch-size", "-b", type=int, help="Override batch size")
-@click.option("--cache-size", type=int, help="Override cache size")
 @click.option(
     "--lr-scheduler",
     type=click.Choice(["step", "plateau", "cosine"]),
@@ -134,19 +127,17 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option("--cache-size", type=int, help="Override cache size")
 def main(
     config: str,
-    resume: str,
-    device: str,
-    epochs: int,
+    resume: str | None,
+    device: str | None,
+    epochs: int | None,
     model: str,
-    dataset: str,
+    dataset: str | None,
     preprocess: bool,
-    class_weights: tuple,
+    class_weights: tuple[float, float, float] | None,
     verbose: bool,
     log_memory: bool,
     log_level: str,
     loss: str,
-    disable_autolog: bool,
-    disable_system_metrics: bool,
     search_best: bool,
     # NEW PARAMETERS
     checkpoint_every: int,
@@ -163,7 +154,7 @@ def main(
 
     # Load config
     with open(config, "r") as f:
-        config_dict = yaml.safe_load(f)
+        config_dict: dict[str, Any] = yaml.safe_load(f)
 
     cfg = SeismicConfig(**config_dict)
 
@@ -286,6 +277,7 @@ def main(
             target_traces=cfg.target_traces,
             n_samples=cfg.n_samples,
             strip_width=cfg.strip_width,
+            sampling_interval_ms=cfg.sampling_interval_ms,
         )
 
         chunk_dir.mkdir(parents=True, exist_ok=True)
@@ -359,7 +351,7 @@ def main(
 
     # Create data manager and datasets (with configurable cache size)
     data_manager = ChunkedDataManager(
-        chunk_dir=chunk_dir,
+        chunk_dir=str(chunk_dir),
         manifest=manifest,
         cache_size=cfg.cache_size,  # ← From config
         shuffle_chunks=True,
@@ -410,6 +402,7 @@ def main(
     # --- MODEL INITIALIZATION ---
     logger.info(f"\nInitializing model: {model}")
 
+    model_obj: torch.nn.Module
     if model == "unet":
         model_obj = UNet(in_channels=1, out_channels=3)
         model_name = "UNet"
@@ -447,12 +440,11 @@ def main(
     # Optimizer and loss (using configurable class weights)
     optimizer = torch.optim.Adam(model_obj.parameters(), lr=cfg.learning_rate)
 
-    device = torch.device(cfg.device)
+    device_obj = torch.device(cfg.device)
     class_weights_tensor = torch.tensor(cfg.class_weights, dtype=torch.float32).to(
-        device
+        device_obj
     )
     criterion = create_loss_function(cfg)
-    criterion = criterion.to(device)
 
     logger.info(f"\nClass weights: {class_weights_tensor.tolist()}")
 
@@ -482,16 +474,16 @@ def main(
         # Search specifically for this dataset
         best_for_dataset = mlflow_manager.search_models(
             filter_string=f"tags.dataset = '{cfg.dataset_name}'",
-            order_by=[{"field_name": "metrics.val_iou", "ascending": False}],
+            order_by=[{"field_name": "metrics.val_iou", "ascending": "False"}],
             max_results=5,
         )
 
         if best_for_dataset:
             logger.info(f"\nBest models for {cfg.dataset_name}:")
-            for i, model_obj in enumerate(best_for_dataset):
-                metrics = {m.key: m.value for m in model_obj.metrics}
+            for i, best_model in enumerate(best_for_dataset):
+                metrics = {m.key: m.value for m in best_model.metrics}
                 logger.info(
-                    f"  {i + 1}. {model_obj.name} - IoU: {metrics.get('val_iou', 0):.4f}"
+                    f"  {i + 1}. {best_model.name} - IoU: {metrics.get('val_iou', 0):.4f}"
                 )
 
     logger.info("\n" + "=" * 60)
@@ -503,7 +495,7 @@ def main(
     # Get the main log file path safely
     try:
         log_path = (
-            logger._core.handlers[1]._path
+            logger._core.handlers[1]._path  # type: ignore[attr-defined]
             if len(logger._core.handlers) > 1
             else "logs/"
         )

@@ -150,6 +150,7 @@ def main(config: str, force: bool, dataset: str):
         target_traces=cfg.target_traces,
         n_samples=cfg.n_samples,
         strip_width=cfg.strip_width,
+        sampling_interval_ms=cfg.sampling_interval_ms,
     )
 
     # total_chunks = sum(len(c) for c in chunks.values())

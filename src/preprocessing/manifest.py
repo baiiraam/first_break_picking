@@ -51,7 +51,7 @@ def generate_manifest(
     """
     manifest_path = chunk_dir / "manifest.json"
 
-    manifest = {
+    manifest: dict[str, Any] = {
         "dataset": dataset_name,
         "version": get_next_version(manifest_path) if increment_version else "1.0.0",
         "created": datetime.now(timezone.utc).isoformat(),
@@ -68,7 +68,6 @@ def generate_manifest(
             file_size_mb = (
                 chunk_path.stat().st_size / (1024 * 1024) if chunk_path.exists() else 0
             )
-
             manifest["chunks"].append(
                 {
                     "id": chunk["id"],
@@ -137,7 +136,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     logger.info(
         f"Manifest loaded from {path} (version: {manifest.get('version', 'unknown')})"
     )
-    return manifest
+    return dict(manifest)
 
 
 def validate_manifest(manifest: dict[str, Any]) -> bool:
@@ -198,9 +197,9 @@ def validate_manifest(manifest: dict[str, Any]) -> bool:
     return True
 
 
-def get_chunk_paths(manifest: dict[str, Any], chunk_dir: Path) -> dict[str, Path]:
+def get_chunk_paths(manifest: dict[str, Any], chunk_dir: Path) -> dict[str, list[Path]]:
     """Get all chunk file paths from manifest."""
-    paths = {}
+    paths: dict[str, list[Path]] = {}
     for chunk in manifest["chunks"]:
         split = chunk["split"]
         filename = chunk["filename"]

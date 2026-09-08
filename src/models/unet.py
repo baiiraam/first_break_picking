@@ -2,6 +2,8 @@
 U-Net architecture for seismic first break picking.
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -114,4 +116,4 @@ class UNet(nn.Module):
             out = out[:, :, :h, :w]
 
         # ⚠️ CRITICAL: Make contiguous for MPS
-        return out.contiguous()
+        return cast(torch.Tensor, out.contiguous())

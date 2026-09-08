@@ -2,7 +2,6 @@
 HDF5 utility functions for seismic data.
 """
 
-
 import h5py
 import numpy as np
 from loguru import logger
@@ -69,7 +68,7 @@ def get_trace_counts(
     end_indices: np.ndarray,
 ) -> np.ndarray:
     """Get trace counts for each shot."""
-    return end_indices - start_indices
+    return np.asarray(end_indices - start_indices)
 
 
 def validate_hdf5(hdf5_path: str) -> bool:
@@ -90,6 +89,6 @@ def validate_hdf5(hdf5_path: str) -> bool:
                 logger.error(f"SPARE1 not found in {hdf5_path}")
                 return False
         return True
-    except Exception as e: # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error validating HDF5: {e}")
         return False

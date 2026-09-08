@@ -134,7 +134,7 @@ def get_cpu_memory_info() -> dict[str, float]:
     }
 
 
-def get_cuda_memory_info() -> dict[str, float] | None:
+def get_cuda_memory_info() -> dict[str, Any] | None:
     """Get CUDA GPU memory information."""
     if not torch.cuda.is_available():
         return None
@@ -186,11 +186,11 @@ def get_mps_memory_info() -> dict[str, float] | None:
 
         mps_limit = min(system_ram_gb * 0.75, 16.0)
 
-        allocated = 0
+        allocated = 0.0
         if hasattr(torch.mps, "current_allocated_memory"):
             allocated = torch.mps.current_allocated_memory() / (1024**3)
 
-        driver_allocated = 0
+        driver_allocated = 0.0
         if hasattr(torch.mps, "driver_allocated_memory"):
             driver_allocated = torch.mps.driver_allocated_memory() / (1024**3)
 
@@ -211,7 +211,7 @@ def get_mps_memory_info() -> dict[str, float] | None:
         return None
 
 
-def get_device_info() -> dict:
+def get_device_info() -> dict[str, Any]:
     """Get complete device and memory information."""
 
     info = {
@@ -242,15 +242,15 @@ def get_device_info() -> dict:
 # ============================================================
 
 
-def get_recommended_memory_limits(info: dict) -> dict:
-    """Get recommended memory limits for different devices."""
-
-    recommendations = {}
+def get_recommended_memory_limits(
+    info: dict[str, Any],
+) -> dict[str, dict[str, float] | None]:
+    recommendations: dict[str, dict[str, float] | None] = {}
 
     # CPU recommendation
     if info.get("cpu"):
         cpu = info["cpu"]
-        available_gb = cpu.get("available_gb", 0)
+        available_gb: float = float(cpu.get("available_gb", 0.0))
         recommendations["cpu"] = {
             "recommended_gb": available_gb * 0.7,
             "max_gb": available_gb * 0.85,
@@ -261,7 +261,7 @@ def get_recommended_memory_limits(info: dict) -> dict:
     # CUDA recommendation
     if info.get("cuda") and info["cuda"].get("devices"):
         device = info["cuda"]["devices"][0]
-        total_gb = device.get("total_gb", 0)
+        total_gb: float = float(device.get("total_gb", 0.0))
         recommendations["cuda"] = {
             "recommended_gb": total_gb * 0.8,
             "max_gb": total_gb * 0.9,
@@ -273,8 +273,8 @@ def get_recommended_memory_limits(info: dict) -> dict:
     if info.get("mps"):
         mps = info["mps"]
         recommendations["mps"] = {
-            "recommended_gb": mps.get("recommended_limit_gb", 8.0),
-            "max_gb": mps.get("max_safe_gb", 10.0),
+            "recommended_gb": float(mps.get("recommended_limit_gb", 8.0)),
+            "max_gb": float(mps.get("max_safe_gb", 10.0)),
         }
     else:
         recommendations["mps"] = None

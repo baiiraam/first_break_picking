@@ -2,6 +2,7 @@
 HDF5 dataset for lazy loading with level-based telemetry.
 """
 
+from typing import Any
 
 import h5py
 import numpy as np
@@ -23,7 +24,7 @@ class HDF5SeismicDataset(Dataset):
         self,
         hdf5_path: str,
         shot_indices: dict[int, tuple[int, int]],
-        shot_ids: list,
+        shot_ids: list[int],
         target_traces: int = 1578,
         n_samples: int = 751,
         strip_width: int = 8,
@@ -36,8 +37,8 @@ class HDF5SeismicDataset(Dataset):
         self.strip_width = strip_width
         self.half_width = strip_width // 2
 
-        self.file = None
-        self.group = None
+        self.file: h5py.File | None = None
+        self.group: h5py.Dataset | h5py.Group | Any = None
 
         logger.info(f"[HDF5] INIT: {len(self)} shots, file={hdf5_path}")
         logger.debug(
@@ -60,7 +61,7 @@ class HDF5SeismicDataset(Dataset):
             logger.debug(f"[HDF5] Opening HDF5 file: {self.hdf5_path}")
             self.file = h5py.File(self.hdf5_path, "r", swmr=True)
             self.group = self.file["TRACE_DATA"]["DEFAULT"]
-
+        assert self.group is not None, "HDF5 group is not initialized"
         # Read data
         shot_data = self.group["data_array"][start_idx:end_idx, :]
         shot_picks = self.group["SPARE1"][start_idx:end_idx, 0]
@@ -113,4 +114,4 @@ class HDF5SeismicDataset(Dataset):
         self.close()
 
     def get_shot_id(self, idx: int) -> int:
-        return self.shot_ids[idx]
+        return int(self.shot_ids[idx])
