@@ -1,5 +1,6 @@
+# configs/batch_config.yaml
 # ============================================================
-# BATCH TRAINING CONFIGURATION (with Loss Functions)
+# BATCH TRAINING CONFIGURATION
 # ============================================================
 
 global:
@@ -8,60 +9,110 @@ global:
   log_memory: true
   verbose: true
   log_level: "DEBUG"
-  
-  # ============================================================
-  # LOSS FUNCTION CONFIGURATION
-  # ============================================================
-  loss_function: "combo"        # cross_entropy, focal, dice, combo
-  class_weights: [0.1, 0.1, 0.8]  # Before, After, Strip
-  dice_weight: 0.5              # For combo loss
-  focal_gamma: 2.0              # For focal/combo loss
-  
+  loss_function: "combo"
+  class_weights: [0.05, 0.05, 0.9]
+  dice_weight: 0.5
+  focal_gamma: 2.0
   preprocess: false
   checkpoint_every: 5
   early_stopping: 5
   skip_failed: true
   clear_memory_between_datasets: true
   pause_between_datasets: 2
+  concurrent: false
+  max_workers: 2
+  timeout_seconds: 7200
 
 datasets:
   Brunswick:
     epochs: 40
     log_memory: true
-  
   Halfmile:
     log_level: "DEBUG"
-  
   Lalor:
     batch_size_override: 2
     model_override: "tiny"
     preprocess: true
-  
   Sudbury:
     epochs: 25
     device: "cpu"
 
 # ============================================================
-# AUTO-CONFIG SETTINGS (with Loss Awareness)
+# ✅ ADD VARIANTS HERE - This is what was missing
+# ============================================================
+variants:
+  - model: "pico"
+    batch_size: 8
+    cache_size: 5
+    memory_limit_gb: 4.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "nano"
+    batch_size: 6
+    cache_size: 4
+    memory_limit_gb: 6.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "tiny"
+    batch_size: 4
+    cache_size: 4
+    memory_limit_gb: 8.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "mpslight"
+    batch_size: 4
+    cache_size: 4
+    memory_limit_gb: 10.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "light"
+    batch_size: 4
+    cache_size: 3
+    memory_limit_gb: 12.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "mobile"
+    batch_size: 3
+    cache_size: 3
+    memory_limit_gb: 14.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "efficient"
+    batch_size: 2
+    cache_size: 2
+    memory_limit_gb: 16.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+  - model: "unet"
+    batch_size: 2
+    cache_size: 2
+    memory_limit_gb: 18.0
+    class_weights: "0.05,0.05,0.9"
+    strip_width: 8
+
+# ============================================================
+# AUTO-CONFIG SETTINGS
 # ============================================================
 auto:
   strategy: "smart"
   memory_usage: 0.85
-  
-  # Loss function can be overridden per dataset
   loss_overrides:
     Lalor:
-      loss_function: "dice"      # Use Dice for large dataset
-      class_weights: [0.1, 0.1, 0.8]
-    
+      loss_function: "dice"
+      class_weights: [0.05, 0.05, 0.9]
     Sudbury:
       loss_function: "focal"
       focal_gamma: 3.0
-    
     Halfmile:
       loss_function: "combo"
       dice_weight: 0.6
-  
   model_order:
     - "pico"
     - "nano"
@@ -71,6 +122,14 @@ auto:
     - "mobile"
     - "efficient"
     - "unet"
-  
   skip_for_large:
     - "unet"
+
+# ============================================================
+# MONITORING & NOTIFICATIONS
+# ============================================================
+monitoring:
+  memory_warning_threshold_gb: 16.0
+  memory_critical_threshold_gb: 20.0
+  system_memory_percent_warning: 80
+  system_memory_percent_critical: 90

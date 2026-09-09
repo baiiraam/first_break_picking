@@ -3,6 +3,7 @@
 Run PicoUNet on all datasets with logging.
 """
 
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -11,6 +12,8 @@ from pathlib import Path
 # Define datasets
 DATASETS = ["Halfmile", "Sudbury", "Brunswick", "Lalor"]
 TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def run_pico_on_all_datasets(interactive: bool = True):

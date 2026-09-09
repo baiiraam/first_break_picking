@@ -1,3 +1,6 @@
+# src/training/callbacks.py
+
+
 """
 Training callbacks for Seismic FBP.
 """
@@ -7,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from loguru import logger
+
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class Callback(ABC):
