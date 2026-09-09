@@ -1,3 +1,7 @@
+# Updated Documentation - Sep 9, 2026, 16:07
+
+---
+
 # Seismic First Break Picking - Complete Project Documentation
 
 ## 📋 **Project Overview**
@@ -6,7 +10,7 @@ This project implements a **deep learning pipeline for automatic seismic first b
 
 The pipeline converts the first break picking problem into a **3-class segmentation task**:
 - **Class 0**: Samples before the first break
-- **Class 1**: Samples after the first break
+- **Class 1**: Samples after the first break  
 - **Class 2**: A narrow strip around the first break (the target)
 
 ---
@@ -14,25 +18,25 @@ The pipeline converts the first break picking problem into a **3-class segmentat
 ## 🏗️ **System Architecture**
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SEISMIC FBP SYSTEM                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
-│  │  PHASE 1    │    │  PHASE 2    │    │  PHASE 3    │    │  PHASE 4    │ │
-│  │  DATA       │───▶│  MODEL      │───▶│  BATCH      │───▶│  EVALUATION │ │
-│  │  PIPELINE   │    │  TRAINING   │    │  ORCHESTRA- │    │  & EXPORT   │ │
-│  │             │    │             │    │  TION       │    │             │ │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘ │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │                    INFRASTRUCTURE LAYER                             │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │  │
-│  │  │ MLflow   │  │TensorBoard│  │  Loguru  │  │   Checkpoint     │  │  │
-│  │  │ Registry │  │ Metrics  │  │  Logger  │  │   Management     │  │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘  │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         SEISMIC FBP SYSTEM                                     │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐    ┌───────────┐  │
+│  │   PHASE 1     │    │   PHASE 2     │    │   PHASE 3     │    │  PHASE 4   │  │
+│  │   DATA        ├────┤   MODEL       ├────┤   BATCH       ├────┤  EVALUATION│  │
+│  │   PIPELINE    │    │   TRAINING    │    │   ORCHESTRA-  │    │  & EXPORT  │  │
+│  │               │    │               │    │   TION        │    │            │  │
+│  └───────────────┘    └───────────────┘    └───────────────┘    └───────────┘  │
+│                                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │                    INFRASTRUCTURE LAYER                                   │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────────────┐  │  │
+│  │  │  MLflow  │  │TensorBoard│  │  Loguru  │  │   Checkpoint           │  │  │
+│  │  │ Registry │  │ Metrics  │  │  Logger  │  │   Management           │  │  │
+│  │  └──────────┘  └──────────┘  └──────────┘  └────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -63,9 +67,9 @@ first_break_pick/
 │       └── Sudbury/
 │
 ├── scripts/                    # Executable scripts
-│   ├── train.py                # Main training script
+│   ├── train.py                # Main training script (refactored)
 │   ├── preprocess.py           # Data preprocessing
-│   ├── evaluate.py             # Model evaluation
+│   ├── evaluate.py             # Model evaluation (refactored)
 │   ├── visualize.py            # Result visualization
 │   ├── batch_train.py          # Batch training orchestration
 │   ├── export_model.py         # Model export (ONNX/TorchScript)
@@ -75,13 +79,17 @@ first_break_pick/
 │   ├── run_pico_all.py         # Quick test runner
 │   └── run_model_pairs.py      # Model pair training
 │
-├── src/                        # Core library
+├── src/                        # Core library (modularized)
 │   ├── config.py               # Configuration management
+│   ├── types.py                # Shared type definitions
 │   ├── data/                   # Data loading
 │   │   ├── cache.py            # LRU cache for chunks
 │   │   ├── chunked_dataset.py  # Chunked dataset loader
+│   │   ├── loader.py           # DataLoader creation
 │   │   └── hdf5_dataset.py     # Legacy HDF5 loader
 │   ├── models/                 # Model architectures
+│   │   ├── factory.py          # Model factory (NEW)
+│   │   ├── loader.py           # Model loading utilities
 │   │   ├── unet.py             # Full U-Net (31M params)
 │   │   ├── mps_light_unet.py   # MPS-optimized (1.7M params)
 │   │   ├── light_unet.py       # Lightweight (2.5M params)
@@ -94,16 +102,38 @@ first_break_pick/
 │   │   ├── processor.py        # Shot processor
 │   │   ├── chunker.py          # Chunk assignment
 │   │   ├── manifest.py         # Manifest generation
+│   │   ├── pipeline.py         # Preprocessing pipeline (NEW)
 │   │   └── writer.py           # Chunk writer
 │   ├── training/               # Training components
-│   │   ├── trainer.py          # Main trainer
+│   │   ├── trainer.py          # Core trainer (refactored)
+│   │   ├── runner.py           # Training runner
 │   │   ├── losses.py           # Loss functions
 │   │   ├── metrics.py          # Evaluation metrics
-│   │   └── callbacks.py        # Training callbacks
+│   │   ├── callbacks.py        # Training callbacks
+│   │   └── utils/              # Training utilities (NEW)
+│   │       ├── checkpoints.py  # Checkpoint management
+│   │       ├── device.py       # Device setup & warmup
+│   │       └── tracking.py     # TensorBoard & MLflow tracking
+│   ├── evaluation/             # Evaluation module (NEW)
+│   │   ├── runner.py           # Evaluation runner
+│   │   └── exporter.py         # Result exporter
+│   ├── batch/                  # Batch training module
+│   │   ├── orchestrator.py     # Core orchestration
+│   │   ├── pipeline.py         # Batch pipeline (NEW)
+│   │   ├── concurrent.py       # Concurrent execution (NEW)
+│   │   ├── executor.py         # Subprocess execution
+│   │   ├── config.py           # Batch configuration
+│   │   ├── smart_config.py     # Auto-configuration
+│   │   ├── variants.py         # Variant generation
+│   │   ├── summary.py          # Summary service
+│   │   ├── notifier.py         # Notifications
+│   │   └── types.py            # Type definitions
 │   └── utils/                  # Utilities
 │       ├── mlflow_utils.py     # MLflow integration
 │       ├── logger.py           # Logging configuration
-│       ├── memory_utils.py     # Memory management
+│       ├── memory.py           # Memory management
+│       ├── device_utils.py     # Device detection
+│       ├── error_patterns.py   # Error pattern detection
 │       └── hdf5_utils.py       # HDF5 utilities
 │
 ├── tests/                      # Unit tests (76+ tests)
@@ -240,6 +270,49 @@ If memory errors occur, the system automatically tries:
 
 ---
 
+## 🔧 **Recent Improvements (Sep 9, 2026)**
+
+### **1. Module Refactoring**
+The codebase has been significantly modularized:
+
+| Module | Before | After |
+|--------|--------|-------|
+| `scripts/train.py` | 500+ lines monolithic | 150 lines thin wrapper |
+| `src/training/trainer.py` | 800+ lines | 180 lines (orchestration only) |
+| `src/batch/orchestrator.py` | 400+ lines | 250 lines (with extracted modules) |
+| `scripts/evaluate.py` | 350+ lines | 120 lines thin wrapper |
+
+### **2. New Modules Created**
+
+| Module | Purpose |
+|--------|---------|
+| `src/models/factory.py` | Model creation registry |
+| `src/models/loader.py` | Model loading for evaluation |
+| `src/preprocessing/pipeline.py` | Standalone preprocessing pipeline |
+| `src/data/loader.py` | DataLoader creation |
+| `src/training/runner.py` | Training runner |
+| `src/training/utils/checkpoints.py` | Checkpoint management |
+| `src/training/utils/device.py` | Device setup & warmup |
+| `src/training/utils/tracking.py` | Tracking & visualization |
+| `src/evaluation/runner.py` | Evaluation loop |
+| `src/evaluation/exporter.py` | Result export |
+| `src/batch/pipeline.py` | Batch pipeline |
+| `src/batch/concurrent.py` | Concurrent execution |
+| `src/batch/variants.py` | Variant generation |
+| `src/types.py` | Shared type definitions |
+
+### **3. Type System Improvements**
+- Fixed all mypy issues (72 source files now pass)
+- Added proper `LoggerType` handling via `src/types.py`
+- Resolved loguru import issues with `TYPE_CHECKING` pattern
+
+### **4. Error Handling**
+- Replaced blind `except Exception` with specific exceptions
+- Added full failure log saving in `src/batch/executor.py`
+- Improved memory error detection and recovery
+
+---
+
 ## 🔧 **Critical Fixes Applied**
 
 ### **1. Unit Conversion (PREPROCESSING FIX)**
@@ -268,6 +341,21 @@ pick = spare1 / sampling_interval_ms  # 881ms → 440 samples
 **Problem**: MPS JIT compilation causing "Placeholder storage" errors.
 
 **✅ Solution**: Added proper MPS warmup with synchronized operations.
+
+### **4. Python Executable Detection**
+**Problem**: Hardcoded `python3.12` in subprocess calls.
+
+**✅ Solution**: Replaced with `sys.executable` for virtual environment compatibility.
+
+### **5. Logger Type Issues**
+**Problem**: `from loguru import Logger` was failing.
+
+**✅ Solution**: Created `src/types.py` with `TYPE_CHECKING` pattern for proper type annotations.
+
+### **6. Concurrent Execution**
+**Problem**: Sequential processing was slow.
+
+**✅ Solution**: Added `src/batch/concurrent.py` with `ProcessPoolExecutor` support.
 
 ---
 
@@ -319,7 +407,7 @@ python scripts/train.py \
 
 ### **4. Batch Training (Auto-Config)**
 ```bash
-python scripts/batch_train.py --config configs/batch_config.yaml --auto-config
+python scripts/batch_train.py --auto-config --datasets Halfmile --epochs 2
 ```
 
 ### **5. Evaluate Best Model**
@@ -330,6 +418,16 @@ python scripts/evaluate.py --config configs/halfmile.yaml --model best --detaile
 ### **6. Visualize Predictions**
 ```bash
 python scripts/visualize.py --config configs/halfmile.yaml --model models/registry/best_model.pt
+```
+
+### **7. Search for Best Models**
+```bash
+python scripts/search_models.py --dataset Halfmile --top 5 --compare
+```
+
+### **8. Export Model for Production**
+```bash
+python scripts/export_model.py --model models/registry/best_model.pt --onnx --torchscript
 ```
 
 ---
@@ -353,6 +451,9 @@ tail -f logs/latest/latest.log
 
 # Error log
 tail -f logs/$(date +%Y-%m-%d)/*_errors.log
+
+# Batch training logs
+tail -f logs/batch/latest/latest.log
 ```
 
 ---
@@ -369,3 +470,20 @@ The preprocessing unit mismatch has been **fully resolved**:
 | Strip placement | ✅ | 1.07% of pixels (expected) |
 | Ignore index | ✅ | Loss functions handle -1 |
 | Sampling interval | ✅ | Configurable per dataset |
+
+---
+
+## 📚 **Documentation Index**
+
+| Document | Purpose |
+|----------|---------|
+| `README.md` | Complete project documentation |
+| `cli_docs.md` | CLI command reference |
+| `explanation.md` | Technical explanation |
+| `README_DOCS.md` | Training guide |
+
+---
+
+**Last Updated: Sep 9, 2026, 16:07**
+
+---

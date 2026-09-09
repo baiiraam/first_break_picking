@@ -1,4 +1,8 @@
 """
+src/config.py
+"""
+
+"""
 Configuration management for Seismic FBP pipeline.
 """
 
@@ -40,7 +44,7 @@ class SeismicConfig:
     gpu_ids: list | None = None
 
     # === Loss ===
-    class_weights: list[float] = field(default_factory=lambda: [0.2, 0.2, 0.6])
+    class_weights: list[float] = field(default_factory=lambda: [0.05, 0.05, 0.9])
 
     # === Model Registry ===
     model_registry_dir: str = "models/registry"
@@ -76,7 +80,7 @@ class SeismicConfig:
     log_gradients: bool = False
 
     # Loss
-    loss_function: str = "cross_entropy"  # cross_entropy, focal, dice, combo
+    loss_function: str = "combo"  # cross_entropy, focal, dice, combo
     dice_weight: float = 0.5
     focal_gamma: float = 2.0
 

@@ -229,12 +229,7 @@ def main(config: str, force: bool, dataset: str):
     logger.info(f"Total chunks: {processed_chunks}")
     logger.info(f"Chunk directory: {chunk_dir}")
     logger.info(f"Manifest: {manifest_path}")
-    log_path = "logs/"
-    try:
-        log_path = str(logger._core.handlers[1]._path)
-    except (AttributeError, IndexError) as e:
-        logger.warning(f"Could not get log path: {e}")
-        log_path = "logs/"
+    log_path = f"logs/{cfg.dataset_name}/preprocess_{cfg.dataset_name}.log"
     logger.info(f"Log file: {log_path}")
     logger.info("=" * 60)
 

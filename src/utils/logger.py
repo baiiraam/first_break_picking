@@ -9,6 +9,9 @@ from pathlib import Path
 
 from loguru import logger
 
+# ✅ Import LoggerType from shared types
+from src.types import LoggerType
+
 
 class SeismicLogger:
     """
@@ -164,7 +167,7 @@ class SeismicLogger:
             "json": self.json_log_path,
         }
 
-    def get_logger(self):
+    def get_logger(self) -> LoggerType:
         """Return the logger instance."""
         return logger
 
@@ -181,7 +184,7 @@ def setup_logger(
     log_dir: str = "logs",
     level: str = "INFO",
     create_latest_symlink: bool = True,
-):
+) -> LoggerType:
     """
     Setup a logger with a specific task name and log level.
 
@@ -207,7 +210,7 @@ def setup_logger(
     return seismic_logger.get_logger()
 
 
-def get_logger():
+def get_logger() -> LoggerType:
     """
     Get the global logger instance.
 

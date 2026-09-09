@@ -1,41 +1,22 @@
 #!/usr/bin/env python3
 """
 Training script for seismic FBP with U-Net.
+Thin CLI wrapper for the training pipeline.
 """
 
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 import click
-import torch
-import yaml
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.config import SeismicConfig
-from src.data.chunked_dataset import ChunkedDataManager
-from src.models.efficient_unet import EfficientUNet
-from src.models.light_unet import LightUNet, NanoUNetLight
-from src.models.mobilenet import MobileUNet
-from src.models.mps_light_unet import MPSLightUNet
-from src.models.nano_unet import NanoUNet
-from src.models.pico_unet import PicoUNet
-from src.models.tiny_unet import TinyUNet
-from src.models.unet import UNet
-from src.preprocessing.chunker import Chunker
-from src.preprocessing.manifest import (
-    generate_manifest,
-    load_manifest,
-    save_manifest,
-    validate_manifest,
-)
-from src.preprocessing.processor import ShotProcessor
-from src.training.losses import create_loss_function
-from src.training.trainer import SeismicTrainer
-from src.utils.hdf5_utils import load_shot_indices, validate_hdf5
+from src.data.loader import create_dataloaders
+from src.models.factory import get_available_models
+from src.preprocessing.pipeline import run_preprocessing_pipeline
+from src.training.runner import create_and_train
 from src.utils.logger import create_task_name, setup_logger
 
 
@@ -47,19 +28,7 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--model",
     "-m",
-    type=click.Choice(
-        [
-            "unet",
-            "efficient",
-            "mobile",
-            "light",
-            "nano",
-            "nano-light",
-            "mpslight",
-            "tiny",
-            "pico",
-        ]
-    ),
+    type=click.Choice(get_available_models()),
     default="unet",
     help="Model architecture to use",
 )
@@ -90,9 +59,6 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--search-best", is_flag=True, help="Search for best model after training"
 )
-# ============================================================
-# ADD THESE NEW OPTIONS
-# ============================================================
 @click.option(
     "--lr-scheduler",
     type=click.Choice(["step", "plateau", "cosine"]),
@@ -139,7 +105,6 @@ def main(
     log_level: str,
     loss: str,
     search_best: bool,
-    # NEW PARAMETERS
     checkpoint_every: int,
     early_stopping: int,
     batch_size: int,
@@ -152,55 +117,41 @@ def main(
 ):
     """Run the training pipeline."""
 
-    # Load config
-    with open(config, "r") as f:
-        config_dict: dict[str, Any] = yaml.safe_load(f)
+    # Build override dict
+    overrides = {
+        "dataset_name": dataset,
+        "device": device,
+        "n_epochs": epochs,
+        "preprocess": preprocess,
+        "class_weights": list(class_weights) if class_weights else None,
+        "verbose_training": verbose,
+        "log_level": "DEBUG" if verbose else log_level,
+        "log_memory": log_memory,
+        "checkpoint_every": checkpoint_every,
+        "early_stopping_patience": early_stopping,
+        "batch_size": batch_size,
+        "cache_size": cache_size,
+        "lr_scheduler": lr_scheduler,
+        "learning_rate": learning_rate,
+        "num_workers": num_workers,
+        "loss_function": loss,
+        "dice_weight": dice_weight,
+        "focal_gamma": focal_gamma,
+    }
 
-    cfg = SeismicConfig(**config_dict)
+    # Filter out None values
+    overrides = {k: v for k, v in overrides.items() if v is not None}
 
-    # Override options
-    if dataset:
-        cfg.dataset_name = dataset
-    if device:
-        cfg.device = device
-    if epochs:
-        cfg.n_epochs = epochs
-    if preprocess:
-        cfg.preprocess = True
-    if class_weights:
-        cfg.class_weights = list(class_weights)
-    if verbose:
-        cfg.verbose_training = True
-        cfg.log_level = "DEBUG"
-    if log_memory:
-        cfg.log_memory = True
-    if log_level:
-        cfg.log_level = log_level
-    if checkpoint_every != 5:
-        cfg.checkpoint_every = checkpoint_every
-    if early_stopping != 5:
-        cfg.early_stopping_patience = early_stopping
-    if batch_size:
-        cfg.batch_size = batch_size
-    if cache_size:
-        cfg.cache_size = cache_size
-    if lr_scheduler:
-        cfg.lr_scheduler = lr_scheduler
-    if learning_rate:
-        cfg.learning_rate = learning_rate
-    if num_workers:
-        cfg.num_workers = num_workers
-    if loss:
-        cfg.loss_function = loss
-    if dice_weight is not None:
-        cfg.dice_weight = dice_weight
-    if focal_gamma is not None:
-        cfg.focal_gamma = focal_gamma
+    # Load config with overrides
+    from src.utils.config_parser import load_and_override_config
 
-    # Setup logger with configurable level
+    cfg, _ = load_and_override_config(config, overrides)
+
+    # Setup logger
     task_name = create_task_name(cfg, "training", model)
     logger = setup_logger(task_name=task_name, level=cfg.log_level)
 
+    # Log header
     logger.info("=" * 60)
     logger.info("SEISMIC FBP - TRAINING PIPELINE")
     logger.info("=" * 60)
@@ -211,288 +162,80 @@ def main(
     logger.info(f"Learning rate: {cfg.learning_rate}")
     logger.info(f"LR scheduler: {cfg.lr_scheduler}")
     logger.info(f"Model: {model}")
+    logger.info(f"Loss: {cfg.loss_function}")
     logger.info(f"Class weights: {cfg.class_weights}")
     logger.info(f"Log level: {cfg.log_level}")
     logger.info(f"Log memory: {cfg.log_memory}")
     logger.info(f"Cache size: {cfg.cache_size}")
     logger.info(f"Preprocess: {cfg.preprocess}")
 
-    # --- DATA DISCOVERY & PREPROCESSING ---
+    # === 1. PREPROCESSING ===
     chunk_dir = Path(cfg.chunk_dir) / cfg.dataset_name
     manifest_path = chunk_dir / "manifest.json"
 
-    # Check if preprocessing is needed
-    needs_preprocessing = cfg.preprocess or not manifest_path.exists()
-
-    if needs_preprocessing:
-        logger.info(f"\n🔄 Preprocessing {cfg.dataset_name}...")
-
-        # Validate HDF5
-        if not validate_hdf5(cfg.hdf5_path):
-            logger.error("HDF5 validation failed. Exiting.")
-            sys.exit(1)
-
-        # Phase 1: Data Discovery
-        unique_shots, start_indices, end_indices = load_shot_indices(cfg.hdf5_path)
-        total_shots = len(unique_shots)
-        trace_counts = end_indices - start_indices
-
-        logger.info(f"Total shots: {total_shots}")
-        logger.info(f"Trace counts: min={trace_counts.min()}, max={trace_counts.max()}")
-
-        # Filter valid shots
-        valid_mask = trace_counts >= 10
-        valid_shots = unique_shots[valid_mask]
-        valid_indices = start_indices[valid_mask]
-        valid_end_indices = end_indices[valid_mask]
-
-        if len(valid_shots) == 0:
-            logger.error("No valid shots found.")
-            sys.exit(1)
-
-        # Phase 2: Chunk Assignment
-        chunker = Chunker(cfg)
-
-        splits = chunker.assign_splits(valid_shots)
-
-        # Map shot IDs to indices
-        shot_to_start = {shot: start for shot, start in zip(valid_shots, valid_indices)}
-        shot_to_end = {shot: end for shot, end in zip(valid_shots, valid_end_indices)}
-
-        chunks = {}
-        for split_name, shot_list in splits.items():
-            chunks[split_name] = chunker.create_chunks(shot_list)
-            logger.info(
-                f"  {split_name}: {len(shot_list)} shots, {len(chunks[split_name])} chunks"
+    if cfg.preprocess or not manifest_path.exists():
+        try:
+            manifest_path = run_preprocessing_pipeline(
+                cfg=cfg,
+                logger=logger,
+                force=cfg.force_reprocess,
             )
+        except (FileNotFoundError, RuntimeError, ValueError) as e:
+            logger.error(f"Preprocessing failed: {e}")
+            sys.exit(1)
 
-        # Phase 3: Processing
-        processor = ShotProcessor(cfg)
-
-        chunk_dir.mkdir(parents=True, exist_ok=True)
-
-        for split_name, chunk_list in chunks.items():
-            for chunk in chunk_list:
-                chunk_id = chunk["id"]
-                shot_ids = chunk["shot_ids"]
-                n_shots = chunk["n_shots"]
-
-                data_batch = torch.zeros(
-                    (n_shots, cfg.target_traces, cfg.n_samples), dtype=torch.float32
-                )
-                mask_batch = torch.zeros(
-                    (n_shots, cfg.target_traces, cfg.n_samples), dtype=torch.long
-                )
-
-                for i, shot_id in enumerate(shot_ids):
-                    from src.utils.hdf5_utils import load_shot_data
-
-                    shot_data, shot_picks = load_shot_data(
-                        cfg.hdf5_path,
-                        shot_to_start[shot_id],
-                        shot_to_end[shot_id],
-                        cfg.target_traces,
-                        cfg.n_samples,
-                    )
-
-                    processed_data, processed_mask, _ = processor.process_shot(
-                        shot_data, shot_picks
-                    )
-                    data_batch[i] = torch.tensor(processed_data, dtype=torch.float32)
-                    mask_batch[i] = torch.tensor(processed_mask, dtype=torch.long)
-
-                chunk_filename = f"chunk_{chunk_id:03d}_{split_name}.pt"
-                chunk_path = chunk_dir / chunk_filename
-
-                torch.save(
-                    {
-                        "data": data_batch,
-                        "mask": mask_batch,
-                        "shot_ids": shot_ids,
-                        "split": split_name,
-                        "chunk_id": chunk_id,
-                        "n_shots": n_shots,
-                    },
-                    chunk_path,
-                )
-
-        # Phase 4: Generate Manifest
-        manifest = generate_manifest(
-            dataset_name=cfg.dataset_name,
-            chunks=chunks,
-            config=cfg.to_dict(),
-            chunk_dir=chunk_dir,
-            total_shots=len(valid_shots),
-            total_traces=int(sum(trace_counts)),
+    # === 2. DATA LOADING ===
+    try:
+        dataloaders, _dataset_info = create_dataloaders(
+            cfg=cfg,
+            logger=logger,
+            manifest_path=manifest_path,
         )
-        save_manifest(manifest, manifest_path)
-        logger.info(f"✅ Preprocessing complete for {cfg.dataset_name}")
-
-    # Load manifest
-    manifest = load_manifest(manifest_path)
-    if not validate_manifest(manifest):
-        logger.error("Invalid manifest")
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        logger.error(f"Data loading failed: {e}")
         sys.exit(1)
 
-    logger.info(f"\nManifest loaded: {manifest['dataset']}")
-    logger.info(f"  Total shots: {manifest['total_shots']}")
-    logger.info(f"  Total chunks: {len(manifest['chunks'])}")
-
-    # Create data manager and datasets (with configurable cache size)
-    data_manager = ChunkedDataManager(
-        chunk_dir=str(chunk_dir),
-        manifest=manifest,
-        cache_size=cfg.cache_size,  # ← From config
-        shuffle_chunks=True,
-    )
-
-    train_dataset = data_manager.get_dataset("train")
-    val_dataset = data_manager.get_dataset("val")
-    test_dataset = data_manager.get_dataset("test")
-
-    # Create dataloaders
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=True,
-        num_workers=cfg.num_workers,
-        pin_memory=cfg.device == "cuda",
-        prefetch_factor=2 if cfg.num_workers > 0 else None,
-        persistent_workers=cfg.num_workers > 0,
-    )
-
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=False,
-        num_workers=cfg.num_workers // 2,
-        pin_memory=cfg.device == "cuda",
-        prefetch_factor=2 if cfg.num_workers > 0 else None,
-        persistent_workers=cfg.num_workers > 0,
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=False,
-        num_workers=cfg.num_workers // 2,
-        pin_memory=cfg.device == "cuda",
-        prefetch_factor=2 if cfg.num_workers > 0 else None,
-        persistent_workers=cfg.num_workers > 0,
-    )
-
-    dataloaders = {"train": train_loader, "val": val_loader, "test": test_loader}
-
-    logger.info("\nData loaded:")
-    logger.info(f"  Training: {len(train_dataset)} shots, {len(train_loader)} batches")
-    logger.info(f"  Validation: {len(val_dataset)} shots, {len(val_loader)} batches")
-    logger.info(f"  Test: {len(test_dataset)} shots, {len(test_loader)} batches")
-
-    # --- MODEL INITIALIZATION ---
-    logger.info(f"\nInitializing model: {model}")
-
-    model_obj: torch.nn.Module
-    if model == "unet":
-        model_obj = UNet(in_channels=1, out_channels=3)
-        model_name = "UNet"
-    elif model == "efficient":
-        model_obj = EfficientUNet(in_channels=1, out_channels=3, pretrained=True)
-        model_name = "EfficientUNet"
-    elif model == "mobile":
-        model_obj = MobileUNet(in_channels=1, out_channels=3, pretrained=True)
-        model_name = "MobileUNet"
-    elif model == "light":
-        model_obj = LightUNet(in_channels=1, out_channels=3)
-        model_name = "LightUNet"
-    elif model == "nano-light":
-        model_obj = NanoUNetLight(in_channels=1, out_channels=3)
-        model_name = "NanoUNetLight"
-    elif model == "mpslight":
-        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-        model_name = "MPSLightUNet"
-    elif model == "tiny":
-        model_obj = TinyUNet(in_channels=1, out_channels=3)
-        model_name = "TinyUNet"
-    elif model == "nano":
-        model_obj = NanoUNet(in_channels=1, out_channels=3)
-        model_name = "NanoUNet"
-    elif model == "pico":
-        model_obj = PicoUNet(in_channels=1, out_channels=3)
-        model_name = "PicoUNet"
-    else:
-        raise ValueError(f"Unknown model: {model}")
-
-    total_params = sum(p.numel() for p in model_obj.parameters())
-    logger.info(f"\nModel: {model_name}")
-    logger.info(f"  Parameters: {total_params:,}")
-
-    # Optimizer and loss (using configurable class weights)
-    optimizer = torch.optim.Adam(model_obj.parameters(), lr=cfg.learning_rate)
-
-    device_obj = torch.device(cfg.device)
-    class_weights_tensor = torch.tensor(cfg.class_weights, dtype=torch.float32).to(
-        device_obj
-    )
-    criterion = create_loss_function(cfg)
-
-    logger.info(f"\nClass weights: {class_weights_tensor.tolist()}")
-
-    # Trainer
-    trainer = SeismicTrainer(
-        model=model_obj,
-        dataloaders=dataloaders,
-        criterion=criterion,
-        optimizer=optimizer,
-        config=cfg,
-        model_name=model_name,
-    )
-
-    # Train
-    trainer.fit(resume_from=resume, verbose=cfg.verbose_training)
-    # In train.py, after trainer.fit():
-
-    if search_best:
-        logger.info("\n" + "=" * 60)
-        logger.info("🔍 SEARCHING FOR BEST MODELS")
-        logger.info("=" * 60)
-
-        from src.utils.mlflow_utils import get_mlflow_manager
-
-        mlflow_manager = get_mlflow_manager()
-
-        # Search specifically for this dataset
-        best_for_dataset = mlflow_manager.search_models(
-            filter_string=f"tags.dataset = '{cfg.dataset_name}'",
-            order_by=[{"field_name": "metrics.val_iou", "ascending": "False"}],
-            max_results=5,
+    # === 3. TRAINING ===
+    try:
+        results = create_and_train(
+            model_key=model,
+            cfg=cfg,
+            dataloaders=dataloaders,
+            logger=logger,
+            resume_from=resume,
+            search_best=search_best,
         )
+    except (RuntimeError, ValueError, OSError) as e:
+        logger.error(f"Training failed: {e}")
+        sys.exit(1)
 
-        if best_for_dataset:
-            logger.info(f"\nBest models for {cfg.dataset_name}:")
-            for i, best_model in enumerate(best_for_dataset):
-                metrics = {m.key: m.value for m in best_model.metrics}
-                logger.info(
-                    f"  {i + 1}. {best_model.name} - IoU: {metrics.get('val_iou', 0):.4f}"
-                )
-
+    # === 4. FINAL LOGGING ===
     logger.info("\n" + "=" * 60)
     logger.info("✅ TRAINING COMPLETE!")
     logger.info("=" * 60)
+    logger.info(f"Model: {results['model_name']}")
+    logger.info(f"Parameters: {results['total_params']:,}")
     logger.info(f"Model registry: {cfg.model_registry_dir}")
-    logger.info(f"TensorBoard: runs/{cfg.dataset_name}/{model_name}")
+    logger.info(f"TensorBoard: runs/{cfg.dataset_name}/{results['model_name']}")
 
-    # Get the main log file path safely
+    # Get log path safely
+    # Better log path detection
+    log_path = f"logs/{cfg.dataset_name}/{model}"
     try:
-        log_path = (
-            logger._core.handlers[1]._path  # type: ignore[attr-defined]
-            if len(logger._core.handlers) > 1
-            else "logs/"
-        )
+        if hasattr(logger, "_core") and hasattr(logger._core, "handlers"):
+            for handler in logger._core.handlers:
+                if hasattr(handler, "_path"):
+                    log_path = str(handler._path)
+                    break
     except (AttributeError, IndexError, KeyError):
-        log_path = "logs/"
+        # Fallback to default
+        log_path = f"logs/{cfg.dataset_name}/{model}"
     logger.info(f"Log file: {log_path}")
+
     logger.info("\nTo view results:")
-    logger.info(f"  tensorboard --logdir runs/{cfg.dataset_name}/{model_name}")
+    logger.info(
+        f"  tensorboard --logdir runs/{cfg.dataset_name}/{results['model_name']}"
+    )
     logger.info("  mlflow ui --backend-store-uri sqlite:///mlflow.db")
     logger.info("=" * 60)
 

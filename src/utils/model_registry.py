@@ -5,7 +5,7 @@ Provides a unified interface for all model configurations.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 import yaml
 
@@ -29,7 +29,7 @@ class ModelRegistry:
     Loads profiles from YAML and provides lookup methods.
     """
 
-    _instance: ClassVar = None
+    _instance: ClassVar[Optional["ModelRegistry"]] = None
     _profiles: ClassVar[dict[str, ModelProfile]] = {}  # ✅ Fixed with ClassVar
 
     def __new__(cls):
