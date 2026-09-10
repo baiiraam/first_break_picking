@@ -1,4 +1,5 @@
-# src/batch/notifier.py
+# file location: src/batch/notifier.py
+
 """
 Email and Slack notification utilities.
 """

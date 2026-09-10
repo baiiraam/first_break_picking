@@ -1,3 +1,5 @@
+# file location: src/data/hdf5_dataset.py
+
 """
 HDF5 dataset for lazy loading with level-based telemetry.
 """

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/batch_train.py
+
 """
 Batch training pipeline - Entry point.
 """

@@ -1,4 +1,5 @@
-# src/models/layers.py
+# file location: src/models/layers.py
+
 import torch
 import torch.nn.functional as F
 from torch import nn

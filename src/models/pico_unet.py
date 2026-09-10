@@ -1,3 +1,5 @@
+# file location: src/models/pico_unet.py
+
 """
 Pico U-Net for instant testing.
 Parameters: ~2K only!

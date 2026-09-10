@@ -1,4 +1,5 @@
-# src/training/utils/device.py
+# file location: src/training/utils/device.py
+
 """
 Device setup and hardware warmup utilities.
 """

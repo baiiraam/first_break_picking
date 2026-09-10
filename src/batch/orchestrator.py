@@ -1,4 +1,5 @@
-# src/batch/orchestrator.py
+# file location: src/batch/orchestrator.py
+
 """
 Batch training orchestration - modified to run ALL models.
 """

@@ -1,4 +1,5 @@
-# src/models/loader.py
+# file location: src/models/loader.py
+
 """
 Model loading utilities for evaluation and inference.
 Supports local checkpoints, MLflow URIs, and automatic best model selection.

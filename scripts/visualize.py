@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/visualize.py
+
 """
 Visualization script for seismic FBP results.
 """

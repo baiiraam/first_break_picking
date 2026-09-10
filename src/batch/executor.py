@@ -1,3 +1,5 @@
+# file location: src/batch/executor.py
+
 """
 Subprocess management for training execution with enhanced diagnostics.
 """

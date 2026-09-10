@@ -1,4 +1,5 @@
-# src/training/runner.py
+# file location: src/training/runner.py
+
 """
 Training runner for seismic FBP.
 """

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/run_pico_all.py
+
 """
 Run PicoUNet on all datasets with logging.
 """

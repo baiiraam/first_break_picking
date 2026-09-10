@@ -1,3 +1,5 @@
+# file location: src/utils/memory_utils.py
+
 """
 Memory management utilities for training pipeline.
 """

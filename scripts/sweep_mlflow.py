@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/sweep_mlflow.py
+
 """
 MLflow Sweep Script
 Runs grid search over datasets, models, and loss functions with MLflow tracking.

@@ -1,3 +1,5 @@
+# file location: src/preprocessing/manifest.py
+
 """
 Manifest generation for chunked datasets with checksums and versioning.
 """

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/train.py
+
 """
 Training script for seismic FBP with U-Net.
 Thin CLI wrapper for the training pipeline.

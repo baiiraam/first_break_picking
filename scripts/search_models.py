@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/search_models.py
+
 """
 Search and compare MLflow models.
 """

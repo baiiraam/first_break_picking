@@ -1,3 +1,5 @@
+# file location: src/utils/model_registry.py
+
 """
 Model registry for seismic FBP - loads model profiles from YAML.
 Provides a unified interface for all model configurations.

@@ -1,3 +1,5 @@
+# file location: src/models/tiny_unet.py
+
 """
 Tiny U-Net for quick testing.
 Parameters: ~50K only!

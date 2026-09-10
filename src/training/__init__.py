@@ -1,4 +1,5 @@
-# src/training/__init__.py
+# file location: src/training/__init__.py
+
 """
 Training package for seismic FBP models.
 """

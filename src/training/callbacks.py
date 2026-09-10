@@ -1,5 +1,4 @@
-# src/training/callbacks.py
-
+# file location: src/training/callbacks.py
 
 """
 Training callbacks for Seismic FBP.

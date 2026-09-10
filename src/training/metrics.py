@@ -1,3 +1,5 @@
+# file location: src/training/metrics.py
+
 """
 Evaluation metrics for seismic FBP.
 """

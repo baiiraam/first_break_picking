@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/export_model.py
+
 """
 Export trained model to ONNX and TorchScript formats.
 """

@@ -1,4 +1,5 @@
-# src/training/utils/__init__.py
+# file location: src/training/utils/__init__.py
+
 """
 Utility modules for the training package.
 """

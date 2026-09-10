@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: src/training/losses.py
+
 """
 Loss function factory for seismic FBP with ignore_index support.
 """

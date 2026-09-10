@@ -1,4 +1,5 @@
-# src/training/utils/checkpoints.py
+# file location: src/training/utils/checkpoint.py
+
 """
 Checkpoint management: loading, saving, and MLflow registry integration.
 """

@@ -1,4 +1,5 @@
-# src/batch/variants.py
+# file location: src/batch/variants.py
+
 """
 Variant generation for batch training.
 Handles creation of fallback configurations and auto-variants.

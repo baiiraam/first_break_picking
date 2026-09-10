@@ -1,3 +1,5 @@
+# file location: src/batch/smart_config.py
+
 """
 Smart auto-configuration logic for batch training.
 """

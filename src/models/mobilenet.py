@@ -1,3 +1,5 @@
+# file location: src/models/mobilenet.py
+
 """
 MobileNet + U-Net Decoder for seismic segmentation.
 """

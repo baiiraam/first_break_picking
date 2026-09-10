@@ -1,6 +1,4 @@
-"""
-src/config.py
-"""
+# file location: src/config.py
 
 """
 Configuration management for Seismic FBP pipeline.

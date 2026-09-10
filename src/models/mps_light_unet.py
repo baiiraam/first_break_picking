@@ -1,3 +1,5 @@
+# file location: src/models/mps_light_unet.py
+
 """
 MPS-optimized lightweight U-Net for seismic segmentation.
 Specifically designed for Apple Silicon MPS memory constraints.
