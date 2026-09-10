@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/preprocess.py
+
 """
 Preprocessing pipeline for seismic data.
 Converts HDF5 to chunked PyTorch tensors.

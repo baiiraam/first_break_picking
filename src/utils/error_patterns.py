@@ -1,4 +1,5 @@
-# src/utils/error_patterns.py
+# file location: src/utils/error_patterns.py
+
 """
 Error pattern detection utilities.
 Pre-compiled regex patterns for error detection in batch training.

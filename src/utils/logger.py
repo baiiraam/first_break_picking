@@ -1,3 +1,5 @@
+# file location: src/utils/logger.py
+
 """
 Centralized logging configuration using Loguru with date-based folders and configurable log level.
 """

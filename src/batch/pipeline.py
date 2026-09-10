@@ -1,3 +1,5 @@
+# file location: src/batch/pipeline.py
+
 """
 Batch training pipeline - high-level orchestration.
 """

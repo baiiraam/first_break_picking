@@ -1,5 +1,4 @@
-# src/batch/summary.py
-# This should already exist from earlier. If not, here it is:
+# file location: src/batch/summary.py
 
 """
 Batch training summary and persistence utilities.

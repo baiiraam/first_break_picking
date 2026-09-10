@@ -1,4 +1,5 @@
-# src/utils/config_parser.py
+# file location: src/utils/config_parser.py
+
 """
 Configuration parsing and override utilities.
 """

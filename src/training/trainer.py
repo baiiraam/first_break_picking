@@ -1,4 +1,5 @@
-# src/training/trainer.py
+# file location: src/training/trainer.py
+
 """
 Core training orchestration with delegated responsibilities.
 """

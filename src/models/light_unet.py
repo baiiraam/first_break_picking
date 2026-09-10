@@ -1,3 +1,5 @@
+# file location: src/models/light_unet.py
+
 """
 Lightweight U-Net variants for seismic segmentation.
 """

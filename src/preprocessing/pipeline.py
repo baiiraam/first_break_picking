@@ -1,4 +1,5 @@
-# src/preprocessing/pipeline.py
+# file location: src/preprocessing/pipeline.py
+
 """
 Standalone preprocessing pipeline for seismic data.
 """

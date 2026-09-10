@@ -1,4 +1,5 @@
-# src/data/loader.py
+# file location: src/data/loader.py
+
 """
 Data loader setup for training pipeline.
 """

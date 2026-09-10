@@ -1,4 +1,5 @@
-# src/models/factory.py
+# file location: src/models/factory.py
+
 """
 Model factory for creating model instances from configuration.
 """

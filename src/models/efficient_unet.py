@@ -1,3 +1,5 @@
+# file location: src/models/efficient_unet.py
+
 """
 EfficientNet + U-Net Decoder for seismic segmentation.
 """

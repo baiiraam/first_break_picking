@@ -1,3 +1,5 @@
+# file location: src/preprocessing/writer.py
+
 """
 Chunk writing logic for preprocessing pipeline with checksums and validation.
 """

@@ -1,4 +1,5 @@
-# src/evaluation/__init__.py
+# file location: src/evaluation/__init__.py
+
 """
 Evaluation package for seismic models.
 

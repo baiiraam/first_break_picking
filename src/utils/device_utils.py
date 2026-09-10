@@ -1,4 +1,5 @@
-# src/utils/device_utils.py
+# file location: src/utils/device_utils.py
+
 """
 Device and memory detection utilities.
 """

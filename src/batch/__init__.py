@@ -1,4 +1,5 @@
-# src/batch/__init__.py
+# file location: src/batch/__init__.py
+
 """
 Batch training module for orchestrating multi-dataset training runs.
 """

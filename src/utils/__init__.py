@@ -1,4 +1,5 @@
-# src/utils/__init__.py
+# file location: src/utils/__init__.py
+
 """
 Utilities module for Seismic FBP.
 """

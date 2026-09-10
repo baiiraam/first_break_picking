@@ -1,3 +1,5 @@
+# file location: src/utils/hdf5_utils.py
+
 """
 HDF5 utility functions for seismic data.
 """

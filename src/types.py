@@ -1,4 +1,5 @@
-# src/types.py
+# file location: src/types.py
+
 """
 Shared type definitions for the project.
 """

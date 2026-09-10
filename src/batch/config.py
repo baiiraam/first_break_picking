@@ -1,3 +1,5 @@
+# file location: src/batch/config.py
+
 """
 Batch configuration management with Pydantic validation.
 """

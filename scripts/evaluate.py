@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/evaluate.py
+
 """
 Evaluation script for trained seismic FBP model.
 Thin CLI wrapper for the evaluation pipeline.

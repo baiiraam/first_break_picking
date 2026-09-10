@@ -1,3 +1,5 @@
+# file location: src/preprocessing/processor.py
+
 """
 Shot processing logic for seismic data with validation and logging.
 """

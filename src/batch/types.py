@@ -1,4 +1,5 @@
-# src/batch/types.py
+# file location: src/batch/types.py
+
 """
 Type definitions for batch training.
 """

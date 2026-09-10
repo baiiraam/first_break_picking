@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# file location: scripts/run_model_pairs.py
+
 """
 Run model pairs across all datasets.
 Trains models in pairs: [m1, m2] on dataset1, then dataset2, etc.

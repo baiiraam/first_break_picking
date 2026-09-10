@@ -1,3 +1,5 @@
+# file location: src/models/nano_unet.py
+
 """
 Nano U-Net for ultra-fast testing.
 Parameters: ~10K only!

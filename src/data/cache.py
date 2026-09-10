@@ -1,3 +1,5 @@
+# file location: src/data/cache.py
+
 """
 LRU cache management for chunked dataset with level-based telemetry.
 """

@@ -1,4 +1,5 @@
-# src/evaluation/runner.py
+# file location: src/evaluation/runner.py
+
 """
 Evaluation runner for seismic datasets.
 Handles batch-wise evaluation, metric collection, and detailed error tracking.
