@@ -1,8 +1,13 @@
-# Updated Documentation - Sep 9, 2026, 16:07
+I now have the complete project structure. Let me provide the updated markdown documentation files with the timestamp **Sep 10, 2026, 15:30**.
 
 ---
 
+# README.md
+
+```markdown
 # Seismic First Break Picking - Complete Project Documentation
+
+**Last Updated: Sep 10, 2026, 15:30**
 
 ## 📋 **Project Overview**
 
@@ -10,7 +15,7 @@ This project implements a **deep learning pipeline for automatic seismic first b
 
 The pipeline converts the first break picking problem into a **3-class segmentation task**:
 - **Class 0**: Samples before the first break
-- **Class 1**: Samples after the first break  
+- **Class 1**: Samples after the first break
 - **Class 2**: A narrow strip around the first break (the target)
 
 ---
@@ -52,6 +57,9 @@ first_break_pick/
 │   ├── lalor.yaml              # Lalor dataset config
 │   ├── sudbury.yaml            # Sudbury dataset config
 │   ├── default.yaml            # Base configuration
+│   ├── production.yaml         # Production overrides
+│   ├── experiment_001.yaml     # Experiment-specific overrides
+│   ├── model_profiles.yaml     # Model memory profiles
 │   └── sweep_config.yaml       # MLflow sweep configuration
 │
 ├── data/                       # Data directory
@@ -67,19 +75,19 @@ first_break_pick/
 │       └── Sudbury/
 │
 ├── scripts/                    # Executable scripts
-│   ├── train.py                # Main training script (refactored)
+│   ├── train.py                # Main training script
 │   ├── preprocess.py           # Data preprocessing
-│   ├── evaluate.py             # Model evaluation (refactored)
+│   ├── evaluate.py             # Model evaluation
 │   ├── visualize.py            # Result visualization
 │   ├── batch_train.py          # Batch training orchestration
 │   ├── export_model.py         # Model export (ONNX/TorchScript)
 │   ├── search_models.py        # MLflow model search
 │   ├── sweep_mlflow.py         # Hyperparameter sweep
-│   ├── check_device_memory.py  # Hardware detection
 │   ├── run_pico_all.py         # Quick test runner
 │   └── run_model_pairs.py      # Model pair training
 │
 ├── src/                        # Core library (modularized)
+│   ├── __init__.py
 │   ├── config.py               # Configuration management
 │   ├── types.py                # Shared type definitions
 │   ├── data/                   # Data loading
@@ -88,7 +96,7 @@ first_break_pick/
 │   │   ├── loader.py           # DataLoader creation
 │   │   └── hdf5_dataset.py     # Legacy HDF5 loader
 │   ├── models/                 # Model architectures
-│   │   ├── factory.py          # Model factory (NEW)
+│   │   ├── factory.py          # Model factory
 │   │   ├── loader.py           # Model loading utilities
 │   │   ├── unet.py             # Full U-Net (31M params)
 │   │   ├── mps_light_unet.py   # MPS-optimized (1.7M params)
@@ -97,32 +105,34 @@ first_break_pick/
 │   │   ├── mobilenet.py        # MobileNet encoder
 │   │   ├── tiny_unet.py        # Tiny (50K params)
 │   │   ├── nano_unet.py        # Nano (10K params)
-│   │   └── pico_unet.py        # Pico (2K params)
+│   │   ├── pico_unet.py        # Pico (2K params)
+│   │   └── layers.py           # Shared layer definitions
 │   ├── preprocessing/          # Preprocessing pipeline
 │   │   ├── processor.py        # Shot processor
 │   │   ├── chunker.py          # Chunk assignment
 │   │   ├── manifest.py         # Manifest generation
-│   │   ├── pipeline.py         # Preprocessing pipeline (NEW)
+│   │   ├── pipeline.py         # Preprocessing pipeline
 │   │   └── writer.py           # Chunk writer
 │   ├── training/               # Training components
-│   │   ├── trainer.py          # Core trainer (refactored)
+│   │   ├── trainer.py          # Core trainer
 │   │   ├── runner.py           # Training runner
 │   │   ├── losses.py           # Loss functions
 │   │   ├── metrics.py          # Evaluation metrics
 │   │   ├── callbacks.py        # Training callbacks
-│   │   └── utils/              # Training utilities (NEW)
-│   │       ├── checkpoints.py  # Checkpoint management
+│   │   └── utils/              # Training utilities
+│   │       ├── checkpoint.py   # Checkpoint management
 │   │       ├── device.py       # Device setup & warmup
 │   │       └── tracking.py     # TensorBoard & MLflow tracking
-│   ├── evaluation/             # Evaluation module (NEW)
+│   ├── evaluation/             # Evaluation module
 │   │   ├── runner.py           # Evaluation runner
 │   │   └── exporter.py         # Result exporter
 │   ├── batch/                  # Batch training module
 │   │   ├── orchestrator.py     # Core orchestration
-│   │   ├── pipeline.py         # Batch pipeline (NEW)
-│   │   ├── concurrent.py       # Concurrent execution (NEW)
+│   │   ├── pipeline.py         # Batch pipeline
+│   │   ├── concurrent.py       # Concurrent execution
 │   │   ├── executor.py         # Subprocess execution
 │   │   ├── config.py           # Batch configuration
+│   │   ├── schemas.py          # Pydantic schemas
 │   │   ├── smart_config.py     # Auto-configuration
 │   │   ├── variants.py         # Variant generation
 │   │   ├── summary.py          # Summary service
@@ -132,9 +142,13 @@ first_break_pick/
 │       ├── mlflow_utils.py     # MLflow integration
 │       ├── logger.py           # Logging configuration
 │       ├── memory.py           # Memory management
+│       ├── memory_utils.py     # Memory utilities (legacy)
 │       ├── device_utils.py     # Device detection
 │       ├── error_patterns.py   # Error pattern detection
-│       └── hdf5_utils.py       # HDF5 utilities
+│       ├── hdf5_utils.py       # HDF5 utilities
+│       ├── model_registry.py   # Model registry
+│       ├── tensorboard_utils.py # TensorBoard utilities
+│       └── config_parser.py    # Config parsing
 │
 ├── tests/                      # Unit tests (76+ tests)
 ├── models/registry/            # Saved model checkpoints
@@ -247,6 +261,10 @@ If memory errors occur, the system automatically tries:
 | 4 | 50% | 50% | 70% |
 | 5 (Minimal) | 1 | 1 | 50% |
 
+#### **3.3 Execution Modes**
+- **Sequential** (default): One dataset at a time
+- **Concurrent**: Multiple datasets in parallel with `--concurrent --max-workers N`
+
 ---
 
 ### **Phase 4: Evaluation & Deployment**
@@ -270,17 +288,17 @@ If memory errors occur, the system automatically tries:
 
 ---
 
-## 🔧 **Recent Improvements (Sep 9, 2026)**
+## 🔧 **Recent Improvements (Sep 10, 2026, 15:30)**
 
 ### **1. Module Refactoring**
 The codebase has been significantly modularized:
 
 | Module | Before | After |
 |--------|--------|-------|
-| `scripts/train.py` | 500+ lines monolithic | 150 lines thin wrapper |
-| `src/training/trainer.py` | 800+ lines | 180 lines (orchestration only) |
-| `src/batch/orchestrator.py` | 400+ lines | 250 lines (with extracted modules) |
-| `scripts/evaluate.py` | 350+ lines | 120 lines thin wrapper |
+| `scripts/train.py` | 500+ lines monolithic | ~250 lines thin wrapper |
+| `src/training/trainer.py` | 800+ lines | ~330 lines (orchestration only) |
+| `src/batch/orchestrator.py` | 400+ lines | ~290 lines |
+| `scripts/evaluate.py` | 350+ lines | ~150 lines thin wrapper |
 
 ### **2. New Modules Created**
 
@@ -291,7 +309,7 @@ The codebase has been significantly modularized:
 | `src/preprocessing/pipeline.py` | Standalone preprocessing pipeline |
 | `src/data/loader.py` | DataLoader creation |
 | `src/training/runner.py` | Training runner |
-| `src/training/utils/checkpoints.py` | Checkpoint management |
+| `src/training/utils/checkpoint.py` | Checkpoint management |
 | `src/training/utils/device.py` | Device setup & warmup |
 | `src/training/utils/tracking.py` | Tracking & visualization |
 | `src/evaluation/runner.py` | Evaluation loop |
@@ -299,7 +317,12 @@ The codebase has been significantly modularized:
 | `src/batch/pipeline.py` | Batch pipeline |
 | `src/batch/concurrent.py` | Concurrent execution |
 | `src/batch/variants.py` | Variant generation |
+| `src/batch/schemas.py` | Pydantic config schemas |
 | `src/types.py` | Shared type definitions |
+| `src/utils/device_utils.py` | Device detection |
+| `src/utils/error_patterns.py` | Error pattern detection |
+| `src/utils/memory.py` | Memory utilities |
+| `src/utils/config_parser.py` | Config parsing |
 
 ### **3. Type System Improvements**
 - Fixed all mypy issues (72 source files now pass)
@@ -310,6 +333,13 @@ The codebase has been significantly modularized:
 - Replaced blind `except Exception` with specific exceptions
 - Added full failure log saving in `src/batch/executor.py`
 - Improved memory error detection and recovery
+
+### **5. Concurrency Support**
+- Added `src/batch/concurrent.py` for parallel dataset training
+- CLI flags: `--concurrent --max-workers N`
+
+### **6. Python Executable Detection**
+- Replaced hardcoded `python3.12` with `sys.executable` in executor
 
 ---
 
@@ -341,21 +371,6 @@ pick = spare1 / sampling_interval_ms  # 881ms → 440 samples
 **Problem**: MPS JIT compilation causing "Placeholder storage" errors.
 
 **✅ Solution**: Added proper MPS warmup with synchronized operations.
-
-### **4. Python Executable Detection**
-**Problem**: Hardcoded `python3.12` in subprocess calls.
-
-**✅ Solution**: Replaced with `sys.executable` for virtual environment compatibility.
-
-### **5. Logger Type Issues**
-**Problem**: `from loguru import Logger` was failing.
-
-**✅ Solution**: Created `src/types.py` with `TYPE_CHECKING` pattern for proper type annotations.
-
-### **6. Concurrent Execution**
-**Problem**: Sequential processing was slow.
-
-**✅ Solution**: Added `src/batch/concurrent.py` with `ProcessPoolExecutor` support.
 
 ---
 
@@ -400,7 +415,7 @@ python scripts/train.py \
     --model mpslight \
     --epochs 30 \
     --loss combo \
-    --class-weights 0.1 0.1 0.8 \
+    --class-weights 0.05 0.05 0.9 \
     --verbose \
     --log-memory
 ```
@@ -410,22 +425,32 @@ python scripts/train.py \
 python scripts/batch_train.py --auto-config --datasets Halfmile --epochs 2
 ```
 
-### **5. Evaluate Best Model**
+### **5. Batch Training (Concurrent)**
+```bash
+python scripts/batch_train.py \
+    --config configs/batch_config.yaml \
+    --concurrent \
+    --max-workers 2 \
+    --datasets Halfmile Brunswick \
+    --epochs 2
+```
+
+### **6. Evaluate Best Model**
 ```bash
 python scripts/evaluate.py --config configs/halfmile.yaml --model best --detailed
 ```
 
-### **6. Visualize Predictions**
+### **7. Visualize Predictions**
 ```bash
 python scripts/visualize.py --config configs/halfmile.yaml --model models/registry/best_model.pt
 ```
 
-### **7. Search for Best Models**
+### **8. Search for Best Models**
 ```bash
 python scripts/search_models.py --dataset Halfmile --top 5 --compare
 ```
 
-### **8. Export Model for Production**
+### **9. Export Model for Production**
 ```bash
 python scripts/export_model.py --model models/registry/best_model.pt --onnx --torchscript
 ```
@@ -484,6 +509,5 @@ The preprocessing unit mismatch has been **fully resolved**:
 
 ---
 
-**Last Updated: Sep 9, 2026, 16:07**
-
----
+**Last Updated: Sep 10, 2026, 15:30**
+```
