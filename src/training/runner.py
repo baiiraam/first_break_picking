@@ -82,7 +82,12 @@ def create_and_train(
 
 
 def _search_best_models(cfg: SeismicConfig, logger: Any = None) -> None:
-    """Search for best models after training."""
+    """
+    Search for best models after training.
+
+    This is an OPTIONAL post-training step. If it fails, we log a warning
+    and continue — training is already complete and the model is saved.
+    """
     if logger is None:
         logger = get_logger()
 
@@ -90,20 +95,31 @@ def _search_best_models(cfg: SeismicConfig, logger: Any = None) -> None:
     logger.info("🔍 SEARCHING FOR BEST MODELS")
     logger.info("=" * 60)
 
-    from src.utils.mlflow_utils import get_mlflow_manager
+    try:
+        from src.utils.mlflow_utils import get_mlflow_manager
 
-    mlflow_manager = get_mlflow_manager()
+        mlflow_manager = get_mlflow_manager()
 
-    best_for_dataset = mlflow_manager.search_models(
-        filter_string=f"tags.dataset = '{cfg.dataset_name}'",
-        order_by=[{"field_name": "metrics.val_iou", "ascending": "False"}],
-        max_results=5,
-    )
+        best_for_dataset = mlflow_manager.search_models(
+            filter_string=f"tags.dataset = '{cfg.dataset_name}'",
+            order_by=[{"field_name": "metrics.val_iou", "ascending": "False"}],
+            max_results=5,
+        )
 
-    if best_for_dataset:
-        logger.info(f"\nBest models for {cfg.dataset_name}:")
-        for i, best_model in enumerate(best_for_dataset):
-            metrics = {m.key: m.value for m in best_model.metrics}
-            logger.info(
-                f"  {i + 1}. {best_model.name} - IoU: {metrics.get('val_iou', 0):.4f}"
-            )
+        if best_for_dataset:
+            logger.info(f"\nBest models for {cfg.dataset_name}:")
+            for i, best_model in enumerate(best_for_dataset):
+                try:
+                    metrics = {m.key: m.value for m in best_model.metrics}
+                    iou = metrics.get("val_iou", 0)
+                    logger.info(f"  {i + 1}. {best_model.name} - IoU: {iou:.4f}")
+                except (AttributeError, KeyError) as e:
+                    logger.debug(f"Could not parse model {i + 1}: {e}")
+        else:
+            logger.info(f"No previous models found for {cfg.dataset_name}")
+    except Exception as e:
+        # Training is already complete — don't let search failure crash the run
+        logger.warning(f"⚠️  MLflow search failed (non-critical): {e}")
+        logger.warning(
+            "Training completed successfully; only the post-training search failed."
+        )

@@ -77,6 +77,7 @@ def run_auto_batch_training(
 
     all_variants = generate_auto_variants(
         selected_datasets=selected_datasets,
+        global_config=global_config,
         auto_config=auto_config,
         available_memory_gb=device_info["available_gb"],
         device_type=device_info["device_type"],

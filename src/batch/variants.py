@@ -89,6 +89,7 @@ def generate_fallback_variants(
 
 def generate_auto_variants(
     selected_datasets: list[str],
+    global_config: dict[str, Any],
     auto_config: dict[str, Any],
     available_memory_gb: float,
     device_type: str,
@@ -118,7 +119,9 @@ def generate_auto_variants(
                 dataset_name=dataset_name,
                 available_memory_gb=available_memory_gb,
                 device_type=device_type,
-                logger=logger,  # ← Pass logger here
+                global_config=global_config,
+                auto_config=auto_config,
+                logger=logger,
             )
 
             if config:
