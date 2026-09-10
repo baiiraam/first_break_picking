@@ -235,3 +235,5 @@ mlruns/
 *.png
 runs/
 mlflow.db*
+
+file_structure.txt
