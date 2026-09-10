@@ -18,8 +18,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
-from src.models.mps_light_unet import MPSLightUNet
-from src.models.unet import UNet
+from src.models.factory import create_model, get_available_models
 from src.utils.logger import create_task_name, setup_logger
 
 
@@ -32,7 +31,7 @@ from src.utils.logger import create_task_name, setup_logger
 @click.option(
     "--model-type",
     "-t",
-    type=click.Choice(["unet", "mpslight"]),
+    type=click.Choice(get_available_models()),
     default="unet",
     help="Model architecture type",
 )
@@ -57,6 +56,8 @@ def main(
         sys.exit(1)
 
     # Setup logger
+    # Setup logger + config
+    cfg = None
     if config:
         with open(config, "r") as f:
             config_dict = yaml.safe_load(f)
@@ -80,13 +81,11 @@ def main(
 
     logger.info(f"\nInitializing {model_type} model...")
 
-    model_obj: UNet | MPSLightUNet
-    if model_type == "unet":
-        model_obj = UNet(in_channels=1, out_channels=3)
-    elif model_type == "mpslight":
-        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-    else:
-        logger.error(f"Unknown model type: {model_type}")
+    try:
+        model_obj, model_name = create_model(model_type)
+        logger.info(f"Created model: {model_name}")
+    except ValueError as e:
+        logger.error(f"Failed to create model: {e}")
         sys.exit(1)
 
     # Load checkpoint
@@ -114,8 +113,21 @@ def main(
     output_dir = Path(output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create example input
-    example_input = torch.randn(1, 1, 1578, 751).to(device_obj)
+    # Create example input with correct shape from config
+    if cfg is not None:
+        input_shape = (1, 1, cfg.target_traces, cfg.n_samples)
+        logger.info(
+            f"Input shape from config: {input_shape} "
+            f"(target_traces={cfg.target_traces}, n_samples={cfg.n_samples})"
+        )
+    else:
+        input_shape = (1, 1, 1578, 751)
+        logger.warning(
+            f"⚠️  No config provided, using default shape {input_shape}. "
+            f"This may be wrong for non-Halfmile datasets!"
+        )
+
+    example_input = torch.randn(*input_shape).to(device_obj)
 
     # Export to TorchScript
     if torchscript:

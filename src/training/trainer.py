@@ -4,6 +4,7 @@
 Core training orchestration with delegated responsibilities.
 """
 
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -39,9 +40,11 @@ class SeismicTrainer:
         optimizer: torch.optim.Optimizer,
         config: SeismicConfig,
         model_name: str = "unet",
+        model_key: str = "unet",
     ):
         self.config = config
         self.model_name = model_name
+        self.model_key = model_key
         self.dataloaders = dataloaders
 
         # Device setup
@@ -65,11 +68,10 @@ class SeismicTrainer:
             mlflow_manager=mlflow_manager,
         )
 
-        from pathlib import Path
-
         self.ckpt_manager = CheckpointManager(
             config=config,
             model_name=model_name,
+            model_key=model_key,
             registry_dir=Path(config.model_registry_dir),
             mlflow_manager=mlflow_manager,
             logger=logger,

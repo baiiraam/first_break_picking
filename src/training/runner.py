@@ -64,6 +64,7 @@ def create_and_train(
         optimizer=optimizer,
         config=cfg,
         model_name=model_name,
+        model_key=model_key,
     )
 
     # Train

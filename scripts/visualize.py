@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import SeismicConfig
 from src.data.chunked_dataset import ChunkedDataManager
-from src.models.mps_light_unet import MPSLightUNet
+from src.models.loader import load_evaluation_model  # ← Add this
 from src.preprocessing.manifest import load_manifest
 from src.utils.logger import create_task_name, setup_logger
 
@@ -74,18 +74,13 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
 
     logger.info(f"\nTest set: {len(test_dataset)} shots")
 
-    # Load model
+    # Load model (handles all architectures)
     device_obj = torch.device(cfg.device)
-    model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-
-    checkpoint = torch.load(model, map_location=device_obj)
-    if "model_state_dict" in checkpoint:
-        model_obj.load_state_dict(checkpoint["model_state_dict"])
-    else:
-        model_obj.load_state_dict(checkpoint)
-
-    model_obj = model_obj.to(device_obj)
-    model_obj.eval()
+    try:
+        model_obj = load_evaluation_model(model, cfg, device_obj, logger)
+    except ValueError as e:
+        logger.error(f"Failed to load model: {e}")
+        sys.exit(1)
 
     # Visualize samples
     output_dir = Path(output)

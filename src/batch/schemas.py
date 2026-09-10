@@ -29,7 +29,24 @@ class GlobalConfig(BaseModel):
     pause_between_datasets: int = Field(default=2, ge=0)
     concurrent: bool = False
     max_workers: int = Field(default=2, ge=1, le=8)
+    loss_function: str = Field(
+        default="combo",
+        pattern="^(cross_entropy|focal|dice|combo)$",
+    )
+    class_weights: list[float] = Field(
+        default_factory=lambda: [0.05, 0.05, 0.9]
+    )
+    dice_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    focal_gamma: float = Field(default=2.0, ge=0.0)
 
+    @field_validator("class_weights")
+    @classmethod
+    def validate_class_weights(cls, v):
+        if len(v) != 3:
+            raise ValueError("class_weights must have exactly 3 values")
+        if any(w < 0 for w in v):
+            raise ValueError("class_weights must be non-negative")
+        return v
 
 class MonitoringConfig(BaseModel):
     """Monitoring and notification configuration."""
