@@ -229,6 +229,12 @@ checkpoints/
 *.hdf5
 *.hdf
 evaluation_results/
+visualization_results/
+data_analysis/
+data/
+rafaello/
+models/
+donatello/
 logs/
 mlruns/
 *.pt
@@ -237,10 +243,4 @@ runs/
 mlflow.db*
 
 file_structure.txt
-scripts/verify_loader_bug.py
-scripts/verify_evaluation_sampling.py
-scripts/verify_evaluation_fix.py
-scripts/verify_evaluation_fix_v2.py
-scripts/verify_export_shape_bug.py
-scripts/verify_class_weights_bug.py
-configs/halfmile_test_1ms.yaml
+arbitrary_output.txt
