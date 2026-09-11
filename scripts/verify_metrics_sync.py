@@ -8,10 +8,10 @@ various batch sizes and devices.
 Usage:
     python scripts/verify_metrics_sync.py
 """
+
 import os
 import sys
 import time
-from pathlib import Path
 
 import torch
 

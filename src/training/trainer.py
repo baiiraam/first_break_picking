@@ -23,6 +23,7 @@ from src.training.utils.device import (
 from src.training.utils.tracking import TrackingManager
 from src.utils.logger import get_logger
 from src.utils.mlflow_utils import get_mlflow_manager
+from src.utils.tracking_conventions import EXPERIMENT_TRAINING
 
 logger = get_logger()
 
@@ -56,7 +57,7 @@ class SeismicTrainer:
 
         # Delegated managers
         mlflow_manager = get_mlflow_manager(
-            experiment_name=config.mlflow_experiment_name,
+            experiment_name=EXPERIMENT_TRAINING,
             enable_system_metrics=True,
             enable_autolog=True,
         )
@@ -123,7 +124,7 @@ class SeismicTrainer:
         config_dict = self.config.to_dict()
         config_dict["model_name"] = self.model_name
         self.tracker.start_run(config_dict, self.model)
-        run_id = get_mlflow_manager().run_id or "N/A"
+        run_id = self.tracker.mlflow_manager.run_id or "N/A"
 
         logger.info(f"Starting training from epoch {start_epoch}")
         logger.info(f"MLflow Run ID: {run_id}")

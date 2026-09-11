@@ -35,7 +35,7 @@ class_weights: [0.05, 0.05, 0.9]
 # === Model Registry ===
 model_registry_dir: "models/registry"
 checkpoint_dir: "models/registry"
-checkpoint_every: 1
+checkpoint_every: 3
 
 # === Cache ===
 cache_size: 5
@@ -65,4 +65,4 @@ log_level: "INFO"
 verbose_training: false
 log_batch_every: null
 log_memory: false
-log_predictions_every: 5
+log_predictions_every: 3

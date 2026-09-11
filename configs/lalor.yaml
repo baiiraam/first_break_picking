@@ -32,7 +32,7 @@ class_weights: [0.1, 0.1, 0.8]
 # === Model Registry ===
 model_registry_dir: "models/registry"
 checkpoint_dir: "models/registry"
-checkpoint_every: 5
+checkpoint_every: 3
 
 # === Cache ===
 cache_size: 3                    # ⚠️ Reduce from 5 (Lalor chunks are ~3.3 GB)
@@ -62,4 +62,4 @@ log_level: "INFO"
 verbose_training: false
 log_batch_every: null
 log_memory: false
-log_predictions_every: 5
+log_predictions_every: 3

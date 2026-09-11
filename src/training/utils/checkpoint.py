@@ -250,9 +250,7 @@ class CheckpointManager:
         try:
             model_info = self.mlflow_manager.log_model_with_registry(
                 model=model_to_save,
-                model_name=format_model_name(
-                    model_type, dataset_name, f"epoch_{epoch}"
-                ),
+                model_name=format_model_name(model_type, dataset_name),
                 dataset_name=dataset_name,
                 step=epoch,
                 registered_model_name=registered_name,

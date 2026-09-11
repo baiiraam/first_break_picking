@@ -51,6 +51,7 @@ class SeismicConfig:
 
     # === Cache ===
     cache_size: int = 3  # Number of chunks to keep in memory
+    chunk_aware_sampling: bool = True  # Use ChunkAwareSampler for training
 
     # === Scheduler ===
     lr_scheduler: str = "plateau"
@@ -76,6 +77,7 @@ class SeismicConfig:
     log_predictions_every: int = 5
     log_metrics_every: int = 1
     log_gradients: bool = False
+    phase: str = "unset"  # MLflow tag for experiment grouping  ← NEW
 
     # Loss
     loss_function: str = "combo"  # cross_entropy, focal, dice, combo

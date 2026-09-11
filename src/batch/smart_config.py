@@ -138,13 +138,32 @@ def calculate_optimal_config(
     batch_memory_mb = optimal_batch * memory_per_batch_mb
     batch_memory_gb = batch_memory_mb / 1024
 
-    # 5. CALCULATE OPTIMAL CACHE SIZE
+    # 5. CALCULATE OPTIMAL CACHE SIZE  ← MODIFIED (D.1, Option A)
+    #
+    # Two policies depending on the sampling strategy. Both respect the
+    # memory budget as a hard ceiling — the sampler mode only changes the
+    # *upper cap* on cache size, not whether memory is considered.
+    #
+    #   - Sampler ON (chunk_aware_sampling=True):
+    #       ChunkAwareSampler yields samples chunk-by-chunk. The cache only
+    #       needs to hold the currently-active chunk plus a small margin.
+    #       Cap at 3 — but never exceed what memory allows.
+    #
+    #   - Sampler OFF (chunk_aware_sampling=False):
+    #       Full shuffle. Each batch pulls random samples across chunks, so
+    #       cache sizing is memory-bound with a size-based factor. Unchanged
+    #       from the original heuristic.
+    #
     remaining_after_batch_mb = safe_remaining_mb - batch_memory_mb
 
     memory_per_cache_mb = profile.memory_per_cache_mb
 
     num_chunks = dataset_info.get("num_chunks", 4)
-    cache_factor = min(1.0, max(0.3, num_chunks / 10))
+
+    # Read sampler mode from global_config (default True, matches SeismicConfig)
+    chunk_aware = True
+    if global_config is not None:
+        chunk_aware = bool(global_config.get("chunk_aware_sampling", True))
 
     if memory_per_cache_mb > 0:
         max_cache_by_memory = int(remaining_after_batch_mb / memory_per_cache_mb)
@@ -153,11 +172,25 @@ def calculate_optimal_config(
 
     recommended_cache = profile.recommended_cache_size
 
-    optimal_cache: int = min(
-        max(1, max_cache_by_memory),
-        int(recommended_cache * cache_factor),
-        num_chunks if num_chunks > 0 else 4,
-    )
+    if chunk_aware:
+        # Sequential chunk access — cap at 3, but memory is still a hard ceiling.
+        optimal_cache: int = min(
+            3,
+            num_chunks if num_chunks > 0 else 3,
+            max(1, max_cache_by_memory),
+        )
+        cache_policy = "sampler-aware (sequential, cap 3)"
+        cache_factor = None
+    else:
+        # Random access — original memory-bound heuristic (unchanged).
+        cache_factor = min(1.0, max(0.3, num_chunks / 10))
+
+        optimal_cache = min(
+            max(1, max_cache_by_memory),
+            int(recommended_cache * cache_factor),
+            num_chunks if num_chunks > 0 else 4,
+        )
+        cache_policy = "random-access (memory-bound heuristic)"
 
     cache_memory_mb = optimal_cache * memory_per_cache_mb
     cache_memory_gb = cache_memory_mb / 1024
@@ -209,13 +242,17 @@ def calculate_optimal_config(
                 "value_gb": batch_memory_gb,
                 "description": f"{optimal_batch} batches × {memory_per_batch_mb}MB/batch",
             },
-            "cache_factor": {
-                "value": cache_factor,
-                "description": f"{num_chunks} chunks available",
-            },
             "optimal_cache": {
                 "value": optimal_cache,
-                "description": f"max_by_memory={max_cache_by_memory}, recommended={recommended_cache}, factor={cache_factor:.1f}",
+                "policy": cache_policy,
+                "max_cache_by_memory": max_cache_by_memory,  # ← NEW structured field
+                "description": (
+                    f"chunk_aware={chunk_aware}, "
+                    f"recommended={recommended_cache}, "
+                    f"num_chunks={num_chunks}, "
+                    f"max_by_memory={max_cache_by_memory}, "
+                    f"cache_factor={cache_factor if cache_factor is not None else 'N/A'}"
+                ),
             },
             "cache_memory": {
                 "value_mb": cache_memory_mb,

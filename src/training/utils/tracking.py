@@ -14,6 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from src.config import SeismicConfig
 from src.training.metrics import compute_gradient_norm, compute_weight_norm
 from src.types import LoggerType
+from src.utils.tracking_conventions import training_tags
 
 
 class TrackingManager:
@@ -54,14 +55,18 @@ class TrackingManager:
             return
 
         # Start MLflow run
+        phase = getattr(self.config, "phase", "unset")
+        tags = training_tags(
+            dataset=self.config.dataset_name,
+            model_type=self.model_name,
+            phase=phase,
+            env="research",
+        )
+        tags["device"] = str(self.config.device)
+
         self.mlflow_manager.start_run(
             config_dict=config_dict,
-            tags={
-                "dataset": self.config.dataset_name,
-                "model_type": self.model_name,
-                "device": str(self.config.device),
-                "experiment_type": "training",
-            },
+            tags=tags,
         )
 
         # Log model graph to TensorBoard

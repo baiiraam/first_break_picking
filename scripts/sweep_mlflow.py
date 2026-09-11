@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.utils.logger import setup_logger
 from src.utils.mlflow_utils import MLflowManager, get_mlflow_manager
+from src.utils.tracking_conventions import EXPERIMENT_SWEEPS, sweep_tags
 
 logger = setup_logger(task_name="sweep_mlflow")
 
@@ -42,7 +43,7 @@ class SweepExperiment:
         if self.tracking_config.get("enabled", True):
             self.mlflow_manager = get_mlflow_manager(
                 experiment_name=self.tracking_config.get(
-                    "experiment_name", "model_loss_sweep"
+                    "experiment_name", EXPERIMENT_SWEEPS
                 ),
                 enable_system_metrics=True,
                 enable_autolog=self.tracking_config.get("autolog", {}).get(
@@ -82,25 +83,24 @@ class SweepExperiment:
         try:
             # Start MLflow run
             if self.mlflow_manager:
+                sweep_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                tags = sweep_tags(
+                    dataset=dataset,
+                    model=model,
+                    loss=loss,
+                    sweep_id=sweep_id,
+                    phase="unset",
+                    env="research",
+                )
+                # Merge user-provided tags from tracking_config
+                tags.update(
+                    {k: str(v) for k, v in self.tracking_config.get("tags", {}).items()}
+                )
+
                 run_id = self.mlflow_manager.start_run(
-                    config_dict={
-                        "dataset": dataset,
-                        "model": model,
-                        "loss": loss,
-                        **loss_params,
-                        **self.global_config,
-                    },
+                    config_dict={...},
                     run_name=experiment_name,
-                    tags={
-                        "dataset": dataset,
-                        "model": model,
-                        "loss": loss,
-                        "experiment_type": "sweep",
-                        "sweep_id": datetime.now(timezone.utc).strftime(
-                            "%Y%m%d_%H%M%S"
-                        ),
-                        **self.tracking_config.get("tags", {}),
-                    },
+                    tags=tags,
                 )
                 logger.info(f"   MLflow Run ID: {run_id}")
 
