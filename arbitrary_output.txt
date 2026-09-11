@@ -1,46 +1,76 @@
-((.venv) ) Ais-iMac:first_break_pick student$ ls -R configs/ src/ scripts/
-configs/:
-bad_config.yaml         default.yaml            halfmile_test_1ms.yaml  production.yaml
-batch_config.yaml       experiment_001.yaml     lalor.yaml              sudbury.yaml
-brunswick.yaml          halfmile.yaml           model_profiles.yaml     sweep_config.yaml
-
-scripts/:
-__pycache__                     run_model_pairs.py              verify_class_weights_bug.py     verify_loader_bug.py
-batch_train.py                  run_pico_all.py                 verify_evaluation_fix.py        verify_metrics_sync.py
-evaluate.py                     search_models.py                verify_evaluation_fix_v2.py     verify_mlflow_search_crash.py
-export_model.py                 sweep_mlflow.py                 verify_evaluation_sampling.py   visualize.py
-preprocess.py                   train.py                        verify_export_shape_bug.py
-
-src/:
-__init__.py     batch           data            models          training        utils
-__pycache__     config.py       evaluation      preprocessing   types.py
-
-src//batch:
-__init__.py     concurrent.py   executor.py     orchestrator.py schemas.py      summary.py      variants.py
-__pycache__     config.py       notifier.py     pipeline.py     smart_config.py types.py
-
-src//data:
-__init__.py             cache.py                hdf5_dataset.py         samplers.py
-__pycache__             chunked_dataset.py      loader.py
-
-src//evaluation:
-__init__.py     __pycache__     exporter.py     runner.py
-
-src//models:
-__init__.py             factory.py              loader.py               nano_unet.py            unet.py
-__pycache__             layers.py               mobilenet.py            pico_unet.py
-efficient_unet.py       light_unet.py           mps_light_unet.py       tiny_unet.py
-
-src//preprocessing:
-__init__.py     __pycache__     chunker.py      manifest.py     pipeline.py     processor.py    writer.py
-
-src//training:
-__init__.py     __pycache__     callbacks.py    losses.py       metrics.py      runner.py       trainer.py      utils
-
-src//training/utils:
-__init__.py     __pycache__     checkpoint.py   device.py       tracking.py
-
-src//utils:
-__init__.py             device_utils.py         logger.py               model_registry.py
-__pycache__             error_patterns.py       memory.py               tensorboard_utils.py
-config_parser.py        hdf5_utils.py           mlflow_utils.py
+2026-09-11 15:29:42 | INFO | __main__:main:166 | ============================================================
+2026-09-11 15:29:42 | INFO | __main__:main:167 | SEISMIC FBP - TRAINING PIPELINE
+2026-09-11 15:29:42 | INFO | __main__:main:168 | ============================================================
+2026-09-11 15:29:42 | INFO | __main__:main:169 | Dataset: Halfmile
+2026-09-11 15:29:42 | INFO | __main__:main:170 | Device: mps
+2026-09-11 15:29:42 | INFO | __main__:main:171 | Batch size: 4
+2026-09-11 15:29:42 | INFO | __main__:main:172 | Epochs: 5
+2026-09-11 15:29:42 | INFO | __main__:main:173 | Learning rate: 0.001
+2026-09-11 15:29:42 | INFO | __main__:main:174 | LR scheduler: plateau
+2026-09-11 15:29:42 | INFO | __main__:main:175 | Model: mpslight
+2026-09-11 15:29:42 | INFO | __main__:main:176 | Loss: cross_entropy
+2026-09-11 15:29:42 | INFO | __main__:main:177 | Class weights: [0.05, 0.05, 0.9]
+2026-09-11 15:29:42 | INFO | __main__:main:178 | Log level: INFO
+2026-09-11 15:29:42 | INFO | __main__:main:179 | Log memory: True
+2026-09-11 15:29:42 | INFO | __main__:main:180 | Cache size: 5
+2026-09-11 15:29:42 | INFO | __main__:main:181 | Preprocess: False
+2026-09-11 15:29:42 | WARNING | src.preprocessing.manifest:load_manifest:137 | Manifest checksum mismatch: stored=6fc930017c36e5d1, computed=78835c449eb12f7f
+2026-09-11 15:29:42 | INFO | src.preprocessing.manifest:load_manifest:141 | Manifest loaded from data/chunks/Halfmile/manifest.json (version: 1.0.0)
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:39 | 
+Manifest loaded: Halfmile
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:40 |   Total shots: 690
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:41 |   Total chunks: 10
+2026-09-11 15:29:42 | INFO | src.data.chunked_dataset:__init__:69 | [Dataset] Ready: 552 samples, 8 chunks, cache_size=5
+2026-09-11 15:29:42 | INFO | src.data.chunked_dataset:__init__:69 | [Dataset] Ready: 69 samples, 1 chunks, cache_size=5
+2026-09-11 15:29:42 | INFO | src.data.chunked_dataset:__init__:69 | [Dataset] Ready: 69 samples, 1 chunks, cache_size=5
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:80 | 🔀 Using ChunkAwareSampler for training (chunks=8, seed=42)
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:128 | 
+Data loaded:
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:129 |   Training: 552 shots, 138 batches
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:132 |   Validation: 69 shots, 18 batches
+2026-09-11 15:29:42 | INFO | src.data.loader:create_dataloaders:135 |   Test: 69 shots, 18 batches
+2026-09-11 15:29:42 | INFO | src.training.runner:create_and_train:43 | 
+Initializing model: mpslight
+2026-09-11 15:29:42 | INFO | src.training.runner:create_and_train:47 | 
+Model: MPSLightUNet
+2026-09-11 15:29:42 | INFO | src.training.runner:create_and_train:48 |   Parameters: 1,943,795
+2026-09-11 15:29:42 | INFO | src.training.runner:create_and_train:57 | 
+Class weights: [0.05000000074505806, 0.05000000074505806, 0.8999999761581421]
+2026-09-11 15:29:42 | INFO | src.training.utils.device:setup_device:30 | MPS device initialized successfully
+2026-09-11 15:29:42 | INFO | src.training.utils.device:prepare_model:77 | Single device: mps
+2026-09-11 15:29:42 | INFO | src.utils.mlflow_utils:__init__:69 | MLflow experiment: seismic-fbp (ID: 1)
+2026-09-11 15:29:42 | INFO | src.utils.mlflow_utils:__init__:75 | System metrics logging enabled (GPU/CPU monitoring)
+2026-09-11 15:29:42 | INFO | src.utils.mlflow_utils:__init__:90 | PyTorch autologging enabled with config: {'log_models': True, 'log_every_n_epoch': 1, 'log_every_n_step': 10}
+2026-09-11 15:29:42 | INFO | src.training.utils.tracking:__init__:44 | TensorBoard: runs/Halfmile/MPSLightUNet
+2026-09-11 15:29:43 | INFO | src.utils.mlflow_utils:start_run:154 | MLflow run started: seismic_f9aa8df1 (ID: 2377a32e284d43e7a4db391c37d1abba)
+2026-09-11 15:29:43 | INFO | src.utils.mlflow_utils:__init__:69 | MLflow experiment: seismic-fbp-training (ID: 7)
+2026-09-11 15:29:43 | INFO | src.utils.mlflow_utils:__init__:75 | System metrics logging enabled (GPU/CPU monitoring)
+2026-09-11 15:29:43 | INFO | src.utils.mlflow_utils:__init__:90 | PyTorch autologging enabled with config: {'log_models': True, 'log_every_n_epoch': 1, 'log_every_n_step': 10}
+2026-09-11 15:29:43 | INFO | src.training.trainer:fit:128 | Starting training from epoch 0
+2026-09-11 15:29:43 | INFO | src.training.trainer:fit:129 | MLflow Run ID: N/A
+2026-09-11 15:29:43 | INFO | src.training.utils.device:warmup_mps_device:100 | 🔥 Warming up MPS shaders (first pass can take 2-10 minutes)...
+2026-09-11 15:29:44 | INFO | src.training.utils.device:warmup_mps_device:122 | ✅ MPS warmup complete!
+2026-09-11 15:29:44 | INFO | src.data.samplers:__iter__:125 | [Sampler] Epoch 0: chunk order = [3, 4, 2, 7, 6, 1, 5, 0] (shuffle_chunks=True, shuffle_within=True)
+2026-09-11 15:33:14 | INFO | src.training.trainer:fit:142 | Epoch 1/5 - Train Loss: 0.4082, Train IoU: 0.6212
+2026-09-11 15:33:24 | INFO | src.training.trainer:fit:148 | Epoch 1/5 - Val Loss: 0.5838, Val IoU: 0.5403
+2026-09-11 15:33:24 | INFO | src.training.utils.tracking:_log_sample_predictions:234 | 📸 Logging sample predictions (epoch 0)...
+2026-09-11 15:33:24 | INFO | src.training.trainer:fit:180 | New best val IoU: 0.5403
+2026-09-11 15:33:25 | INFO | src.training.utils.checkpoint:save_best_model:196 | Best model saved: models/registry/MPSLightUNet_Halfmile_best_20260911_113324.pt (val_loss: 0.5838)
+2026-09-11 15:33:25 | INFO | src.training.trainer:fit:223 | ⏱ Epoch duration: 220.9s
+2026-09-11 15:33:25 | INFO | src.data.samplers:__iter__:125 | [Sampler] Epoch 1: chunk order = [7, 2, 5, 6, 1, 4, 0, 3] (shuffle_chunks=True, shuffle_within=True)
+2026-09-11 15:36:54 | INFO | src.training.trainer:fit:142 | Epoch 2/5 - Train Loss: 0.1085, Train IoU: 0.8200
+2026-09-11 15:37:01 | INFO | src.training.trainer:fit:148 | Epoch 2/5 - Val Loss: 0.4298, Val IoU: 0.6153
+2026-09-11 15:37:01 | INFO | src.training.trainer:fit:180 | New best val IoU: 0.6153
+2026-09-11 15:37:01 | INFO | src.training.utils.checkpoint:save_best_model:196 | Best model saved: models/registry/MPSLightUNet_Halfmile_best_20260911_113701.pt (val_loss: 0.4298)
+2026-09-11 15:37:01 | INFO | src.training.trainer:fit:223 | ⏱ Epoch duration: 216.5s
+2026-09-11 15:37:01 | INFO | src.data.samplers:__iter__:125 | [Sampler] Epoch 2: chunk order = [3, 0, 2, 5, 4, 1, 6, 7] (shuffle_chunks=True, shuffle_within=True)
+2026-09-11 15:40:34 | INFO | src.training.trainer:fit:142 | Epoch 3/5 - Train Loss: 0.0613, Train IoU: 0.8486
+2026-09-11 15:40:41 | INFO | src.training.trainer:fit:148 | Epoch 3/5 - Val Loss: 0.0473, Val IoU: 0.8608
+2026-09-11 15:40:41 | INFO | src.training.trainer:fit:180 | New best val IoU: 0.8608
+2026-09-11 15:40:41 | INFO | src.training.utils.checkpoint:save_best_model:196 | Best model saved: models/registry/MPSLightUNet_Halfmile_best_20260911_114041.pt (val_loss: 0.0473)
+2026-09-11 15:40:41 | INFO | src.training.trainer:fit:223 | ⏱ Epoch duration: 219.9s
+2026-09-11 15:40:41 | INFO | src.data.samplers:__iter__:125 | [Sampler] Epoch 3: chunk order = [6, 2, 5, 7, 0, 1, 3, 4] (shuffle_chunks=True, shuffle_within=True)
+2026-09-11 15:44:12 | INFO | src.training.trainer:fit:142 | Epoch 4/5 - Train Loss: 0.0423, Train IoU: 0.8638
+2026-09-11 15:44:19 | INFO | src.training.trainer:fit:148 | Epoch 4/5 - Val Loss: 0.4313, Val IoU: 0.6843
+2026-09-11 15:44:20 | INFO | src.training.trainer:fit:223 | ⏱ Epoch duration: 218.5s
+2026-09-11 15:44:20 | INFO | src.data.samplers:__iter__:125 | [Sampler] Epoch 4: chunk order = [6, 4, 0, 1, 5, 7, 2, 3] (shuffle_chunks=True, shuffle_within=True)

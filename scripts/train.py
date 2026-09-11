@@ -63,6 +63,12 @@ from src.utils.logger import create_task_name, setup_logger
     "--search-best", is_flag=True, help="Search for best model after training"
 )
 @click.option(
+    "--phase",
+    type=str,
+    default=None,
+    help="MLflow phase tag (e.g., 'baseline-v1.0'). Default: 'unset'.",
+)
+@click.option(
     "--lr-scheduler",
     type=click.Choice(["step", "plateau", "cosine"]),
     help="Override learning rate scheduler",
@@ -108,6 +114,7 @@ def main(
     log_level: str,
     loss: str,
     search_best: bool,
+    phase: str | None,                    # ← NEW
     checkpoint_every: int,
     early_stopping: int,
     batch_size: int,
@@ -140,6 +147,7 @@ def main(
         "loss_function": loss,
         "dice_weight": dice_weight,
         "focal_gamma": focal_gamma,
+        "phase": phase,
     }
 
     # Filter out None values

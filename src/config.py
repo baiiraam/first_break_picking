@@ -77,6 +77,7 @@ class SeismicConfig:
     log_predictions_every: int = 5
     log_metrics_every: int = 1
     log_gradients: bool = False
+    phase: str = "unset"  # MLflow tag for experiment grouping  ← NEW
 
     # Loss
     loss_function: str = "combo"  # cross_entropy, focal, dice, combo

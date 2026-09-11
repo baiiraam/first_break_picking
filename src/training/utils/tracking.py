@@ -14,8 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from src.config import SeismicConfig
 from src.training.metrics import compute_gradient_norm, compute_weight_norm
 from src.types import LoggerType
-from src.utils.tracking_conventions import training_tags
-
+from src.utils.tracking_conventions import EXPERIMENT_TRAINING, training_tags
 
 class TrackingManager:
     """

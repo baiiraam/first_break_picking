@@ -121,7 +121,10 @@ class MLflowManager:
             ).hexdigest()[:8]
             run_name = f"seismic_{config_hash}"
 
-        self.current_run = mlflow.start_run(run_name=run_name)
+        self.current_run = mlflow.start_run(
+            run_name=run_name,
+            experiment_id=self.experiment_id,   # ← NEW
+        )
         self.run_id = self.current_run.info.run_id
 
         # Log all configuration parameters
@@ -445,19 +448,36 @@ class MLflowManager:
 # ============================================================
 
 
+_managers: dict[str, "MLflowManager"] = {}
+
+
 def get_mlflow_manager(
     experiment_name: str = EXPERIMENT_TRAINING,
     tracking_uri: str | None = None,
     enable_system_metrics: bool = True,
     enable_autolog: bool = True,
 ) -> MLflowManager:
-    """Get or create an MLflowManager instance."""
-    return MLflowManager(
-        experiment_name=experiment_name,
-        tracking_uri=tracking_uri,
-        enable_system_metrics=enable_system_metrics,
-        enable_autolog=enable_autolog,
-    )
+    """
+    Get or create an MLflowManager instance.
+
+    Managers are cached by (experiment_name, tracking_uri) so that
+    repeated calls with the same arguments return the SAME instance.
+    This is important: the instance holds the active run_id, and
+    callers that need to read the run_id (e.g., training summary logs)
+    must get the same manager that started the run.
+
+    Managers with different experiment names or different tracking
+    URIs are intentionally separate instances.
+    """
+    key = f"{experiment_name}|{tracking_uri or ''}"
+    if key not in _managers:
+        _managers[key] = MLflowManager(
+            experiment_name=experiment_name,
+            tracking_uri=tracking_uri,
+            enable_system_metrics=enable_system_metrics,
+            enable_autolog=enable_autolog,
+        )
+    return _managers[key]
 
 
 def format_model_name(

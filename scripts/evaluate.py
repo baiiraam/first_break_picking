@@ -78,7 +78,7 @@ def _log_evaluation_to_mlflow(
         tags = evaluation_tags(
             dataset=cfg.dataset_name,
             model_type=model_type_tag,
-            phase="unset",
+            phase=cfg.phase,
             env="research",
         )
         tags["model_path"] = model_path
@@ -160,7 +160,12 @@ def _log_evaluation_to_mlflow(
     help="Which split to evaluate",
 )
 @click.option("--detailed", is_flag=True, help="Generate detailed per-shot metrics")
-
+@click.option(
+    "--phase",
+    type=str,
+    default=None,
+    help="MLflow phase tag (e.g., 'baseline-v1.0'). Default: 'unset'.",
+)
 
 
 
@@ -174,6 +179,7 @@ def main(
     dataset: str,
     split: str,
     detailed: bool,
+    phase: str | None
 ):
     """Evaluate the trained model on specified set."""
 
@@ -187,6 +193,8 @@ def main(
 
     if dataset:
         cfg.dataset_name = dataset
+    if phase:
+        cfg.phase=phase
 
     task_name = create_task_name(cfg, "evaluate")
     logger = setup_logger(task_name=task_name)
