@@ -28,6 +28,7 @@ EXPERIMENT_EVALUATION = "seismic-fbp-evaluation"
 EXPERIMENT_BASELINES = "seismic-fbp-baselines"
 EXPERIMENT_SWEEPS = "seismic-fbp-sweeps"
 EXPERIMENT_COMPARISON = "seismic-fbp-comparison"
+EXPERIMENT_EXPLAINABILITY = "seismic-fbp-explainability"
 
 ALL_EXPERIMENTS = (
     EXPERIMENT_TRAINING,
@@ -35,6 +36,7 @@ ALL_EXPERIMENTS = (
     EXPERIMENT_BASELINES,
     EXPERIMENT_SWEEPS,
     EXPERIMENT_COMPARISON,
+    EXPERIMENT_EXPLAINABILITY,
 )
 
 
@@ -185,4 +187,23 @@ def comparison_tags(
         "ml_model": ml_model,
         "sta_config": sta_config,
     }))
+    return base
+
+def explainability_tags(
+    dataset: str,
+    model_type: str,
+    split: str,
+    phase: str = "unset",
+    env: str = "research",
+) -> dict[str, str]:
+    """
+    Canonical tags for an explainability run.
+    """
+    base = _clean({
+        TAG_DATASET: dataset,
+        TAG_MODEL_TYPE: model_type,
+        TAG_PHASE: phase,
+        TAG_ENV: env,
+    })
+    base.update(_clean({"split": split}))
     return base

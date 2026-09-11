@@ -20,7 +20,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.training.metrics import extract_picks_from_mask
 
-
 N_SAMPLES = 751
 
 
