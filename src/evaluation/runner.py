@@ -83,6 +83,7 @@ class EvaluationRunner:
 
         shot_errors: list[float] = []
         shot_ids: list[int] = []
+        pick_positions: list[int] = []
 
         self.logger.info("\nRunning evaluation...")
         self.model.eval()
@@ -114,10 +115,11 @@ class EvaluationRunner:
                             pred_picks=pred_picks_b,
                             true_picks=true_picks_b,
                             batch_idx=batch_idx,
-                            shot_b_idx=b,  # NEW parameter
+                            shot_b_idx=b,
                             dataset_obj=dataset_obj,
                             shot_ids=shot_ids,
                             shot_errors=shot_errors,
+                            pick_positions=pick_positions,
                         )
 
         metrics = self._build_metrics_dict(
@@ -131,6 +133,7 @@ class EvaluationRunner:
             split_name=split_name,
             shot_ids=shot_ids,
             shot_errors=shot_errors,
+            pick_positions=pick_positions,
         )
 
         self._log_metrics(metrics, detailed_results)
@@ -146,12 +149,14 @@ class EvaluationRunner:
         dataset_obj: Any,
         shot_ids: list[int],
         shot_errors: list[float],
+        pick_positions: list[int],
     ) -> None:
         """Collect per-shot errors for detailed analysis."""
         for i in range(len(pred_picks)):
             if true_picks[i] > 0 and pred_picks[i] > 0:
                 error = abs(pred_picks[i] - true_picks[i])
                 shot_errors.append(float(error))
+                pick_positions.append(int(true_picks[i]))
 
                 try:
                     global_shot_idx = batch_idx * self.cfg.batch_size + shot_b_idx
@@ -184,6 +189,7 @@ class EvaluationRunner:
         split_name: str,
         shot_ids: list[int],
         shot_errors: list[float],
+        pick_positions: list[int],   # ← NEW
     ) -> dict[str, Any]:
         """Build detailed results dictionary."""
         if not self.detailed or not shot_errors:
@@ -196,6 +202,7 @@ class EvaluationRunner:
                 "shot_id": shot_ids,
                 "error_samples": shot_errors,
                 "error_ms": np.array(shot_errors) * self.cfg.sampling_interval_ms,
+                "pick_sample": pick_positions,
             }
         )
 
