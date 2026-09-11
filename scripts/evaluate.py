@@ -38,6 +38,7 @@ def _log_evaluation_to_mlflow(
     output_dir,
     detailed: bool,
     logger,
+    images_dir=None
 ) -> None:
     """
     Log evaluation results to MLflow.
@@ -128,6 +129,22 @@ def _log_evaluation_to_mlflow(
         for artifact_path in output_path.glob(f"*{cfg.dataset_name}*.csv"):
             mlflow_manager.log_artifact(str(artifact_path), artifact_path="evaluation")
 
+        # Log evaluation images if provided
+        if images_dir is not None:
+            images_dir = Path(images_dir)
+            if images_dir.exists():
+                n_images = 0
+                for image_path in images_dir.glob("*.png"):
+                    mlflow_manager.log_artifact(
+                        str(image_path), artifact_path="evaluation/images"
+                    )
+                    n_images += 1
+                logger.info(f"✅ Logged {n_images} image(s) to MLflow")
+            else:
+                logger.warning(
+                    f"⚠️  images_dir provided but does not exist: {images_dir}"
+                )
+
         logger.info("✅ Logged artifacts to MLflow")
 
         mlflow_manager.end_run()
@@ -161,6 +178,13 @@ def _log_evaluation_to_mlflow(
 )
 @click.option("--detailed", is_flag=True, help="Generate detailed per-shot metrics")
 @click.option(
+    "--save-images",
+    is_flag=True,
+    default=False,
+    help="Generate and log evaluation images (shot comparisons, "
+         "error histogram, error vs. position). Adds ~15-30s.",
+)
+@click.option(
     "--phase",
     type=str,
     default=None,
@@ -176,6 +200,7 @@ def main(
     split: str,
     detailed: bool,
     phase: str | None,
+    save_images: bool,
 ):
     """Evaluate the trained model on specified set."""
 
@@ -278,6 +303,32 @@ def main(
         detailed=detailed,
     )
 
+    # === OPTIONAL: image generation ===
+    images_dir = None
+    if save_images:
+        from src.evaluation.image_generator import EvaluationImageGenerator
+
+        images_dir = Path(output) / f"images_{cfg.dataset_name}_{timestamp}"
+        generator = EvaluationImageGenerator(output_dir=images_dir, logger=logger)
+
+        # Build a per-split DataFrame of shot_errors from detailed results.
+        # The detailed_results dicts contain a 'dataframe' with shot_id and
+        # error_samples columns.
+        for i, split_name in enumerate(splits):
+            if i < len(all_detailed_results) and all_detailed_results[i]:
+                det = all_detailed_results[i]
+                if isinstance(det, dict) and "dataframe" in det:
+                    generator.generate_for_split(
+                        split_name=split_name,
+                        shot_errors=det["dataframe"],
+                        model=model_obj,
+                        device=device_obj,
+                        data_manager=data_manager,
+                        cfg=cfg,
+                    )
+
+        logger.info(f"✅ Images saved to: {images_dir}")
+
     # ✅ NEW: Log evaluation results to MLflow
     _log_evaluation_to_mlflow(
         cfg=cfg,
@@ -287,6 +338,7 @@ def main(
         output_dir=output,
         detailed=detailed,
         logger=logger,
+        images_dir=images_dir if save_images else None,   # ← NEW
     )
 
     logger.info("\n" + "=" * 60)
