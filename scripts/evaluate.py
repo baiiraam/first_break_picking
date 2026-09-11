@@ -27,6 +27,8 @@ from src.models.loader import load_evaluation_model
 from src.preprocessing.manifest import load_manifest
 from src.utils.logger import create_task_name, setup_logger
 from src.utils.mlflow_utils import get_mlflow_manager
+from src.utils.tracking_conventions import evaluation_tags
+
 
 def _log_evaluation_to_mlflow(
     cfg,
@@ -61,14 +63,30 @@ def _log_evaluation_to_mlflow(
             "splits_evaluated": list(split_results.keys()),
         }
 
+        # Determine model type from the model path for tagging
+        model_type_tag = "unknown"
+        # Best-effort: extract a short name from the path
+        try:
+            from src.models.loader import MODEL_NAME_TO_KEY  # noqa: F401
+            for display_name in MODEL_NAME_TO_KEY.keys():
+                if display_name.lower() in model_path.lower():
+                    model_type_tag = display_name
+                    break
+        except Exception:
+            pass  # keep "unknown"
+
+        tags = evaluation_tags(
+            dataset=cfg.dataset_name,
+            model_type=model_type_tag,
+            phase="unset",
+            env="research",
+        )
+        tags["model_path"] = model_path
+        tags["device"] = device_str
+
         mlflow_manager.start_run(
             config_dict=config_dict,
-            tags={
-                "eval_dataset": cfg.dataset_name,
-                "eval_model_path": model_path,
-                "eval_device": device_str,
-                "eval_type": "evaluation",
-            },
+            tags=tags,
         )
 
         # Log metrics for each split

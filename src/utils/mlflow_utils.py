@@ -21,6 +21,7 @@ from typing import Any, Literal
 import mlflow
 import mlflow.pytorch
 from loguru import logger
+from src.utils.tracking_conventions import EXPERIMENT_TRAINING
 
 
 class MLflowManager:
@@ -30,7 +31,7 @@ class MLflowManager:
 
     def __init__(
         self,
-        experiment_name: str = "seismic-fbp",
+        experiment_name: str = EXPERIMENT_TRAINING,
         tracking_uri: str | None = None,
         enable_system_metrics: bool = True,
         enable_autolog: bool = True,
@@ -445,7 +446,7 @@ class MLflowManager:
 
 
 def get_mlflow_manager(
-    experiment_name: str = "seismic-fbp",
+    experiment_name: str = EXPERIMENT_TRAINING,
     tracking_uri: str | None = None,
     enable_system_metrics: bool = True,
     enable_autolog: bool = True,
