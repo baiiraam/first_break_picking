@@ -2,16 +2,16 @@
 
 """
 Evaluation package for seismic models.
-
-Provides:
-- EvaluationRunner: Core evaluation loop with metric collection
-- ResultExporter: Export results to JSON, CSV, and summary formats
 """
 
+from src.evaluation.comparison import BaselineComparison
+from src.evaluation.comparison_image_generator import ComparisonImageGenerator
 from src.evaluation.exporter import ResultExporter
 from src.evaluation.runner import EvaluationRunner
 
 __all__ = [
+    "BaselineComparison",
+    "ComparisonImageGenerator",
     "EvaluationRunner",
     "ResultExporter",
 ]

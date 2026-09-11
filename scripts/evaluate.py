@@ -38,7 +38,7 @@ def _log_evaluation_to_mlflow(
     output_dir,
     detailed: bool,
     logger,
-    images_dir=None
+    images_dir=None,
 ) -> None:
     """
     Log evaluation results to MLflow.
@@ -69,10 +69,9 @@ def _log_evaluation_to_mlflow(
         # so a path containing "mpslightunet" doesn't get tagged "UNet".
         model_type_tag = "unknown"
         try:
-            from src.models.loader import MODEL_NAME_TO_KEY  # noqa: F401
-            for display_name in sorted(
-                MODEL_NAME_TO_KEY.keys(), key=len, reverse=True
-            ):
+            from src.models.loader import MODEL_NAME_TO_KEY
+
+            for display_name in sorted(MODEL_NAME_TO_KEY.keys(), key=len, reverse=True):
                 if display_name.lower() in model_path.lower():
                     model_type_tag = display_name
                     break
@@ -182,7 +181,7 @@ def _log_evaluation_to_mlflow(
     is_flag=True,
     default=False,
     help="Generate and log evaluation images (shot comparisons, "
-         "error histogram, error vs. position). Adds ~15-30s.",
+    "error histogram, error vs. position). Adds ~15-30s.",
 )
 @click.option(
     "--phase",
@@ -338,7 +337,7 @@ def main(
         output_dir=output,
         detailed=detailed,
         logger=logger,
-        images_dir=images_dir if save_images else None,   # ← NEW
+        images_dir=images_dir if save_images else None,  # ← NEW
     )
 
     logger.info("\n" + "=" * 60)

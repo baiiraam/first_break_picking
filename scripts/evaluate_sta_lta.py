@@ -38,10 +38,10 @@ from src.utils.logger import create_task_name, setup_logger
 from src.utils.mlflow_utils import get_mlflow_manager
 from src.utils.tracking_conventions import EXPERIMENT_BASELINES
 
-
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def select_shot_indices(
     n_total: int,
@@ -91,12 +91,13 @@ def load_shots(
         end = int(end_indices[idx])
 
         shot_data, gt_picks_ms = load_shot_data(
-            cfg.hdf5_path, start, end,
-            cfg.target_traces, cfg.n_samples,
+            cfg.hdf5_path,
+            start,
+            end,
+            cfg.target_traces,
+            cfg.n_samples,
         )
-        gt_picks_samples = np.round(
-            gt_picks_ms / sampling_interval_ms
-        ).astype(np.int64)
+        gt_picks_samples = np.round(gt_picks_ms / sampling_interval_ms).astype(np.int64)
 
         shots.append((shot_id, shot_data, gt_picks_samples))
 
@@ -112,30 +113,51 @@ def build_run_name(dataset: str, phase: str) -> str:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option("--config", "-c", required=True, help="Path to config YAML")
-@click.option("--dataset", "-ds", default=None,
-              help="Override dataset name (for logging)")
-@click.option("--sta-window", type=int, default=15,
-              help="STA window in samples (default 15)")
-@click.option("--lta-window", type=int, default=150,
-              help="LTA window in samples (default 150)")
-@click.option("--threshold", type=float, default=3.0,
-              help="STA/LTA ratio threshold (default 3.0)")
-@click.option("--shots", type=int, default=5,
-              help="Number of shots to evaluate (default 5)")
-@click.option("--seed", type=int, default=None,
-              help="Shuffle shot order with this seed before selecting")
-@click.option("--shots-from", type=int, default=None,
-              help="Explicit start index for a shot range")
-@click.option("--shots-to", type=int, default=None,
-              help="Explicit end index for a shot range")
-@click.option("--save-images", is_flag=True, default=False,
-              help="Generate and log 5 diagnostic images")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Compute and print, do not log to MLflow")
-@click.option("--phase", type=str, default="baseline-v1.0-detailed",
-              help="MLflow phase tag")
+@click.option(
+    "--dataset", "-ds", default=None, help="Override dataset name (for logging)"
+)
+@click.option(
+    "--sta-window", type=int, default=15, help="STA window in samples (default 15)"
+)
+@click.option(
+    "--lta-window", type=int, default=150, help="LTA window in samples (default 150)"
+)
+@click.option(
+    "--threshold", type=float, default=3.0, help="STA/LTA ratio threshold (default 3.0)"
+)
+@click.option(
+    "--shots", type=int, default=5, help="Number of shots to evaluate (default 5)"
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Shuffle shot order with this seed before selecting",
+)
+@click.option(
+    "--shots-from", type=int, default=None, help="Explicit start index for a shot range"
+)
+@click.option(
+    "--shots-to", type=int, default=None, help="Explicit end index for a shot range"
+)
+@click.option(
+    "--save-images",
+    is_flag=True,
+    default=False,
+    help="Generate and log 5 diagnostic images",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Compute and print, do not log to MLflow",
+)
+@click.option(
+    "--phase", type=str, default="baseline-v1.0-detailed", help="MLflow phase tag"
+)
 def main(
     config: str,
     dataset: str | None,
@@ -187,8 +209,9 @@ def main(
         shots_from=shots_from,
         shots_to=shots_to,
     )
-    logger.info(f"  Selected shot indices: {selected[:10]}"
-                f"{'...' if len(selected) > 10 else ''}")
+    logger.info(
+        f"  Selected shot indices: {selected[:10]}{'...' if len(selected) > 10 else ''}"
+    )
 
     # Load shots
     shots_data = load_shots(cfg, selected, cfg.sampling_interval_ms)
@@ -214,8 +237,12 @@ def main(
     logger.info(f"  MAE:                    {m['mean_absolute_error']:.2f} samples")
     logger.info(f"  Median error:           {m['median_absolute_error']:.2f} samples")
     logger.info(f"  Std error:              {m['std_absolute_error']:.2f} samples")
-    logger.info(f"  ±3 accuracy:            {m['accuracy_within_tolerance']*100:.2f}%")
-    logger.info(f"  Predicted picks:        {int((result['per_trace']['pred_pick_sample'] > 0).sum())}")
+    logger.info(
+        f"  ±3 accuracy:            {m['accuracy_within_tolerance'] * 100:.2f}%"
+    )
+    logger.info(
+        f"  Predicted picks:        {int((result['per_trace']['pred_pick_sample'] > 0).sum())}"
+    )
     logger.info(f"  Valid comparisons:      {len(result['per_trace'])}")
 
     # Save per-trace CSV
@@ -272,7 +299,7 @@ def main(
         "std_samples": float(m["std_absolute_error"]),
         "within_3_accuracy": float(m["accuracy_within_tolerance"]),
         "predicted_picks": int((result["per_trace"]["pred_pick_sample"] > 0).sum()),
-        "matched_traces": int(len(result["per_trace"])),
+        "matched_traces": len(result["per_trace"]),
         "total_traces": int(m["total_traces"]),
         "n_shots": len(shots_data),
     }

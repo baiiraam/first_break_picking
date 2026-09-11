@@ -27,11 +27,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.colors import BoundaryNorm, ListedColormap
 
 from src.config import SeismicConfig
 from src.types import LoggerType
-
 
 # ============================================================
 # COLORMAPS
@@ -51,6 +50,7 @@ OVERLAY_NORM = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5], 4)
 # ============================================================
 # GENERATOR
 # ============================================================
+
 
 class EvaluationImageGenerator:
     """
@@ -217,27 +217,21 @@ class EvaluationImageGenerator:
         v = np.percentile(np.abs(seismogram), 95)
         if v == 0:
             v = 1.0
-        ax.imshow(
-            seismogram.T, cmap="seismic", aspect="auto", vmin=-v, vmax=v
-        )
+        ax.imshow(seismogram.T, cmap="seismic", aspect="auto", vmin=-v, vmax=v)
         ax.set_title(f"Seismogram — shot {shot_id}")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
 
         # Panel 2: ground-truth mask
         ax = axes[0, 1]
-        ax.imshow(
-            gt_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto"
-        )
+        ax.imshow(gt_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto")
         ax.set_title("Ground truth")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
 
         # Panel 3: prediction
         ax = axes[1, 0]
-        ax.imshow(
-            pred_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto"
-        )
+        ax.imshow(pred_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto")
         ax.set_title("Prediction")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
@@ -245,12 +239,8 @@ class EvaluationImageGenerator:
         # Panel 4: overlay diff
         ax = axes[1, 1]
         overlay = self._build_overlay(gt_mask, pred_mask)
-        ax.imshow(
-            overlay.T, cmap=OVERLAY_CMAP, norm=OVERLAY_NORM, aspect="auto"
-        )
-        ax.set_title(
-            "Overlay: green=agree, red=missed, blue=false"
-        )
+        ax.imshow(overlay.T, cmap=OVERLAY_CMAP, norm=OVERLAY_NORM, aspect="auto")
+        ax.set_title("Overlay: green=agree, red=missed, blue=false")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
 
@@ -270,9 +260,7 @@ class EvaluationImageGenerator:
     # ERROR HISTOGRAM
     # ---------------------------------------------------------
 
-    def _plot_error_histogram(
-        self, errors: np.ndarray, split_name: str
-    ) -> Path:
+    def _plot_error_histogram(self, errors: np.ndarray, split_name: str) -> Path:
         """Log-scale histogram of per-trace absolute error."""
         p99 = float(np.percentile(errors, 99))
         upper = max(50.0, min(p99 * 1.1, 500.0))
@@ -284,8 +272,9 @@ class EvaluationImageGenerator:
         ax.set_xlabel("Absolute error (samples)")
         ax.set_ylabel("Count (log scale)")
         ax.set_title(f"[{split_name}] Per-trace absolute error distribution")
-        ax.axvline(3.0, color="red", linestyle="--", linewidth=1.5,
-                   label="±3 sample tolerance")
+        ax.axvline(
+            3.0, color="red", linestyle="--", linewidth=1.5, label="±3 sample tolerance"
+        )
 
         # Annotation box
         mae = float(errors.mean())
@@ -302,7 +291,9 @@ class EvaluationImageGenerator:
             f"±3 acc:  {within3:.1f}%"
         )
         ax.text(
-            0.97, 0.97, text,
+            0.97,
+            0.97,
+            text,
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment="top",
@@ -356,8 +347,9 @@ class EvaluationImageGenerator:
         ax.set_xlabel("Ground-truth pick position (samples)")
         ax.set_ylabel("Absolute error (samples, log scale)")
         ax.set_title(f"[{split_name}] Error vs. pick position")
-        ax.axhline(3.0, color="red", linestyle="--", linewidth=1.5,
-                   label="±3 sample tolerance")
+        ax.axhline(
+            3.0, color="red", linestyle="--", linewidth=1.5, label="±3 sample tolerance"
+        )
         ax.legend(loc="upper right")
         ax.grid(True, alpha=0.3, which="both")
 
@@ -398,19 +390,17 @@ class EvaluationImageGenerator:
         x, y = dataset[idx]  # x: (1, H, W) float; y: (H, W) int
 
         seismogram = x.squeeze(0).cpu().numpy()  # (H, W)
-        gt_mask = y.cpu().numpy()                 # (H, W)
+        gt_mask = y.cpu().numpy()  # (H, W)
 
         with torch.no_grad():
             model.eval()
-            xb = x.unsqueeze(0).to(device)       # (1, 1, H, W)
+            xb = x.unsqueeze(0).to(device)  # (1, 1, H, W)
             logits = model(xb)
             pred = torch.argmax(logits, dim=1)[0].cpu().numpy()  # (H, W)
 
         return seismogram, gt_mask, pred
 
-    def _build_overlay(
-        self, gt_mask: np.ndarray, pred_mask: np.ndarray
-    ) -> np.ndarray:
+    def _build_overlay(self, gt_mask: np.ndarray, pred_mask: np.ndarray) -> np.ndarray:
         """
         Build overlay:
             0 = neither GT nor pred strip

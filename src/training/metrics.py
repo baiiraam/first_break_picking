@@ -223,21 +223,50 @@ def compute_layerwise_norms(model: nn.Module) -> dict[str, float]:
 
 def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
     """
-    Extract first break picks from segmentation mask using vectorized operations.
+    Extract first-break picks from a segmentation mask.
+
+    Returns the CENTER of the class-2 strip for each trace.
+
+    The strip is generated as ±(strip_width // 2) samples around the
+    true pick, so its center IS the pick. Using the first strip pixel
+    (as this function previously did) introduces a systematic
+    -(strip_width // 2) bias.
+
+    If a trace has no class-2 strip, falls back to the first class-1
+    pixel minus 4 samples — i.e., the leading edge of the "after"
+    region, offset back by half the standard strip width.
+
+    Args:
+        mask: (n_traces, n_samples) integer array with class labels:
+            0 = before, 1 = after, 2 = strip, -1 = ignore
+
+    Returns:
+        (n_traces,) int64 — pick sample index per trace; 0 if no pick.
     """
-    n_traces = mask.shape[0]
+    n_traces, n_samples = mask.shape
+
+    strip_mask = (mask == 2)
+    after_mask = (mask == 1)
+
+    has_strip = strip_mask.any(axis=1)
+
+    # First strip pixel per trace
+    first_strip = np.argmax(strip_mask, axis=1)
+
+    # Last strip pixel per trace: reverse the mask along axis 1,
+    # argmax gives the offset from the end, then convert to a
+    # forward index.
+    last_strip = n_samples - 1 - np.argmax(strip_mask[:, ::-1], axis=1)
+
+    # Center as midpoint
+    strip_center = (first_strip + last_strip) // 2
+
+    # Fallback for traces without a strip
+    after_first = np.argmax(after_mask, axis=1)
+    fallback = np.maximum(after_first - 4, 0)
+
     picks = np.zeros(n_traces, dtype=np.int64)
-
-    # Find strip positions for all traces at once
-    strip_indices = np.argmax(mask == 2, axis=1)
-    has_strip = np.any(mask == 2, axis=1)
-
-    # For traces with strip, use strip center
-    # For traces without strip, use first after pixel minus 4
-    after_indices = np.argmax(mask == 1, axis=1)
-
-    # Use numpy where for vectorized assignment
-    picks[has_strip] = strip_indices[has_strip]
-    picks[~has_strip] = np.maximum(after_indices[~has_strip] - 4, 0)
+    picks[has_strip] = strip_center[has_strip]
+    picks[~has_strip] = fallback[~has_strip]
 
     return picks

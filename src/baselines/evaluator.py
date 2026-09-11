@@ -97,13 +97,15 @@ class BaselineEvaluator:
                 pred = int(pred_picks[i])
                 if gt > 0 and pred > 0:
                     error_samples = abs(pred - gt)
-                    per_trace_rows.append({
-                        "shot_id": shot_id,
-                        "trace_index": i,
-                        "gt_pick_sample": gt,
-                        "pred_pick_sample": pred,
-                        "error_samples": error_samples,
-                    })
+                    per_trace_rows.append(
+                        {
+                            "shot_id": shot_id,
+                            "trace_index": i,
+                            "gt_pick_sample": gt,
+                            "pred_pick_sample": pred,
+                            "error_samples": error_samples,
+                        }
+                    )
 
             self.logger.debug(
                 f"[Evaluator] Shot {shot_id}: "
@@ -124,9 +126,7 @@ class BaselineEvaluator:
         )
 
         # Serialize picker params for logging
-        picker_params = (
-            self.picker.to_dict() if hasattr(self.picker, "to_dict") else {}
-        )
+        picker_params = self.picker.to_dict() if hasattr(self.picker, "to_dict") else {}
 
         return {
             "metrics": metrics,

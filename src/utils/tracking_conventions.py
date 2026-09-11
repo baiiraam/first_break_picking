@@ -27,12 +27,14 @@ EXPERIMENT_TRAINING = "seismic-fbp-training"
 EXPERIMENT_EVALUATION = "seismic-fbp-evaluation"
 EXPERIMENT_BASELINES = "seismic-fbp-baselines"
 EXPERIMENT_SWEEPS = "seismic-fbp-sweeps"
+EXPERIMENT_COMPARISON = "seismic-fbp-comparison"
 
 ALL_EXPERIMENTS = (
     EXPERIMENT_TRAINING,
     EXPERIMENT_EVALUATION,
     EXPERIMENT_BASELINES,
     EXPERIMENT_SWEEPS,
+    EXPERIMENT_COMPARISON,
 )
 
 
@@ -156,4 +158,31 @@ def sweep_tags(
             }
         )
     )
+    return base
+
+def comparison_tags(
+    dataset: str,
+    ml_model: str,
+    sta_config: str,
+    phase: str = "unset",
+    env: str = "research",
+) -> dict[str, str]:
+    """
+    Canonical tags for a baseline comparison run.
+
+    ml_model: human-readable identifier for the ML model (e.g., the
+        checkpoint filename stem, or an MLflow run ID).
+    sta_config: human-readable identifier for the STA/LTA config
+        (e.g., "sta15_lta150_thr3.0").
+    """
+    base = _clean({
+        TAG_DATASET: dataset,
+        TAG_MODEL_TYPE: "ML_vs_STALTA",
+        TAG_PHASE: phase,
+        TAG_ENV: env,
+    })
+    base.update(_clean({
+        "ml_model": ml_model,
+        "sta_config": sta_config,
+    }))
     return base

@@ -6,6 +6,7 @@ Tests that calculate_optimal_config() respects the user's
 class_weights from the config, rather than silently using
 model-size-based defaults.
 """
+
 import os
 import sys
 
@@ -28,9 +29,15 @@ def main():
     print("\n📊 Config values:")
     print("-" * 70)
     print(f"   global.class_weights: {global_config.get('class_weights')}")
-    print(f"   auto.loss_overrides.Halfmile: {auto_config.get('loss_overrides', {}).get('Halfmile')}")
-    print(f"   auto.loss_overrides.Brunswick: {auto_config.get('loss_overrides', {}).get('Brunswick')}")
-    print(f"   auto.loss_overrides.Lalor: {auto_config.get('loss_overrides', {}).get('Lalor')}")
+    print(
+        f"   auto.loss_overrides.Halfmile: {auto_config.get('loss_overrides', {}).get('Halfmile')}"
+    )
+    print(
+        f"   auto.loss_overrides.Brunswick: {auto_config.get('loss_overrides', {}).get('Brunswick')}"
+    )
+    print(
+        f"   auto.loss_overrides.Lalor: {auto_config.get('loss_overrides', {}).get('Lalor')}"
+    )
 
     # Expected class weights (from config)
     print("\n📊 Expected class weights:")
@@ -41,11 +48,19 @@ def main():
     print(f"   Halfmile: {expected_halfmile} (from global.class_weights)")
 
     # For Brunswick: has override → use it
-    expected_brunswick = auto_config.get("loss_overrides", {}).get("Brunswick", {}).get("class_weights", global_config.get("class_weights"))
+    expected_brunswick = (
+        auto_config.get("loss_overrides", {})
+        .get("Brunswick", {})
+        .get("class_weights", global_config.get("class_weights"))
+    )
     print(f"   Brunswick: {expected_brunswick} (from auto.loss_overrides.Brunswick)")
 
     # For Lalor: has override → use it
-    expected_lalor = auto_config.get("loss_overrides", {}).get("Lalor", {}).get("class_weights", global_config.get("class_weights"))
+    expected_lalor = (
+        auto_config.get("loss_overrides", {})
+        .get("Lalor", {})
+        .get("class_weights", global_config.get("class_weights"))
+    )
     print(f"   Lalor: {expected_lalor} (from auto.loss_overrides.Lalor)")
 
     # Now test what calculate_optimal_config actually returns
@@ -82,7 +97,9 @@ def main():
         match = actual_str == expected_str
         status = "✅" if match else "❌"
 
-        print(f"   {status} {model_name:8} on {dataset_name:10}: actual={actual_str}, expected={expected_str}")
+        print(
+            f"   {status} {model_name:8} on {dataset_name:10}: actual={actual_str}, expected={expected_str}"
+        )
 
         if not match:
             all_match = False

@@ -244,3 +244,4 @@ mlflow.db*
 
 file_structure.txt
 arbitrary_output.txt
+exported_models/

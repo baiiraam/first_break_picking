@@ -23,8 +23,7 @@ matplotlib.use("Agg")  # Headless backend
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import ListedColormap, BoundaryNorm
-
+from matplotlib.colors import BoundaryNorm, ListedColormap
 
 # ============================================================
 # CONSTANTS
@@ -39,6 +38,7 @@ ERROR_NORM = BoundaryNorm([-0.5, 2.5, 19.5, 10000.0], 3)
 # ============================================================
 # GENERATOR
 # ============================================================
+
 
 class BaselineImageGenerator:
     """
@@ -78,9 +78,7 @@ class BaselineImageGenerator:
             return paths
 
         # --- Histogram ---
-        hist_path = self._plot_error_histogram(
-            per_trace["error_samples"].to_numpy()
-        )
+        hist_path = self._plot_error_histogram(per_trace["error_samples"].to_numpy())
         paths.append(hist_path)
 
         # --- Error vs. position ---
@@ -89,9 +87,7 @@ class BaselineImageGenerator:
             paths.append(pos_path)
 
         # --- Best / median / worst shots ---
-        per_shot = (
-            per_trace.groupby("shot_id")["error_samples"].mean().sort_values()
-        )
+        per_shot = per_trace.groupby("shot_id")["error_samples"].mean().sort_values()
         if len(per_shot) == 0:
             return paths
 
@@ -150,9 +146,7 @@ class BaselineImageGenerator:
         # Filter per_trace to this shot
         sub = per_trace[per_trace["shot_id"] == shot_id]
         if len(sub) == 0:
-            self.logger.warning(
-                f"[ImageGen] No per-trace data for shot {shot_id}"
-            )
+            self.logger.warning(f"[ImageGen] No per-trace data for shot {shot_id}")
             return None
 
         # We need the predicted picks. Reconstruct from the per_trace df,
@@ -179,8 +173,12 @@ class BaselineImageGenerator:
         if v == 0:
             v = 1.0
         ax.imshow(
-            shot_data.T, cmap="seismic", aspect="auto",
-            vmin=-v, vmax=v, extent=(0, shot_data.shape[0], shot_data.shape[1], 0),
+            shot_data.T,
+            cmap="seismic",
+            aspect="auto",
+            vmin=-v,
+            vmax=v,
+            extent=(0, shot_data.shape[0], shot_data.shape[1], 0),
         )
         ax.set_title(f"Seismogram — shot {shot_id}")
         ax.set_xlabel("Trace")
@@ -189,21 +187,31 @@ class BaselineImageGenerator:
         # Panel 2: seismogram + picks overlay
         ax = axes[1]
         ax.imshow(
-            shot_data.T, cmap="gray", aspect="auto",
+            shot_data.T,
+            cmap="gray",
+            aspect="auto",
             extent=(0, shot_data.shape[0], shot_data.shape[1], 0),
             alpha=0.5,
         )
         ax.scatter(
-            trace_idx, gt_at, marker="o", s=8,
-            color="#2ca02c", label="Ground truth", alpha=0.7,
+            trace_idx,
+            gt_at,
+            marker="o",
+            s=8,
+            color="#2ca02c",
+            label="Ground truth",
+            alpha=0.7,
         )
         ax.scatter(
-            trace_idx, pred_at, marker="x", s=20,
-            color="#d62728", label="STA/LTA", alpha=0.9,
+            trace_idx,
+            pred_at,
+            marker="x",
+            s=20,
+            color="#d62728",
+            label="STA/LTA",
+            alpha=0.9,
         )
-        ax.set_title(
-            f"Picks: GT (green o) vs STA/LTA (red x) — shot {shot_id}"
-        )
+        ax.set_title(f"Picks: GT (green o) vs STA/LTA (red x) — shot {shot_id}")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
         ax.legend(loc="upper right")
@@ -213,7 +221,8 @@ class BaselineImageGenerator:
         # Panel 3: per-trace error bars
         ax = axes[2]
         ax.bar(
-            trace_idx, errors,
+            trace_idx,
+            errors,
             color=[ERROR_CMAP(ERROR_NORM(e)) for e in errors],
             width=1.0,
         )
@@ -252,8 +261,9 @@ class BaselineImageGenerator:
         ax.set_xlabel("Absolute error (samples)")
         ax.set_ylabel("Count (log scale)")
         ax.set_title("Per-trace absolute error distribution")
-        ax.axvline(3.0, color="red", linestyle="--", linewidth=1.5,
-                   label="±3 sample tolerance")
+        ax.axvline(
+            3.0, color="red", linestyle="--", linewidth=1.5, label="±3 sample tolerance"
+        )
 
         mae = float(errors.mean())
         med = float(np.median(errors))
@@ -269,7 +279,9 @@ class BaselineImageGenerator:
             f"±3 acc:  {within3:.1f}%"
         )
         ax.text(
-            0.97, 0.97, text,
+            0.97,
+            0.97,
+            text,
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment="top",
@@ -304,8 +316,9 @@ class BaselineImageGenerator:
         ax.set_xlabel("Ground-truth pick position (samples)")
         ax.set_ylabel("Absolute error (samples, log scale)")
         ax.set_title("Error vs. pick position")
-        ax.axhline(3.0, color="red", linestyle="--", linewidth=1.5,
-                   label="±3 sample tolerance")
+        ax.axhline(
+            3.0, color="red", linestyle="--", linewidth=1.5, label="±3 sample tolerance"
+        )
         ax.legend(loc="upper right")
         ax.grid(True, alpha=0.3, which="both")
 

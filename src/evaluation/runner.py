@@ -189,7 +189,7 @@ class EvaluationRunner:
         split_name: str,
         shot_ids: list[int],
         shot_errors: list[float],
-        pick_positions: list[int],   # ← NEW
+        pick_positions: list[int],  # ← NEW
     ) -> dict[str, Any]:
         """Build detailed results dictionary."""
         if not self.detailed or not shot_errors:

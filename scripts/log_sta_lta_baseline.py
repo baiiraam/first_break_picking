@@ -36,13 +36,13 @@ from src.utils.logger import setup_logger
 from src.utils.mlflow_utils import get_mlflow_manager
 from src.utils.tracking_conventions import EXPERIMENT_BASELINES
 
-
 DEFAULT_SWEEP_DIR = Path("evaluation_results/sta_lta_sweep")
 
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def find_latest_sweep(sweep_dir: Path) -> Path:
     """Return the most recent sweep_*.json under sweep_dir."""
@@ -138,8 +138,9 @@ def log_baseline_run(
     logger.info(f"  MAE:         {metrics['mae_samples']:.2f}")
     logger.info(f"  Median:      {metrics['median_samples']:.2f}")
     logger.info(f"  ±3 acc:      {metrics['within_3_accuracy']:.4f}")
-    logger.info(f"  Predicted:   {metrics['predicted_picks']} / "
-                f"{metrics['total_traces']}")
+    logger.info(
+        f"  Predicted:   {metrics['predicted_picks']} / {metrics['total_traces']}"
+    )
     logger.info("-" * 70)
 
     if dry_run:
@@ -158,9 +159,7 @@ def log_baseline_run(
 
     # Log the sweep JSON as an artifact
     try:
-        mlflow_manager.log_artifact(
-            str(sweep_path), artifact_path="sweep"
-        )
+        mlflow_manager.log_artifact(str(sweep_path), artifact_path="sweep")
         logger.info(f"  ✅ Artifact logged: {sweep_path.name}")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"  ⚠️  Could not log sweep artifact: {e}")
@@ -173,6 +172,7 @@ def log_baseline_run(
 # ============================================================
 # MAIN
 # ============================================================
+
 
 @click.command()
 @click.option(
@@ -223,26 +223,29 @@ def main(sweep_path_str: str | None, dry_run: bool) -> None:
 
     print()
     print("  Winner (by ±3 accuracy):")
-    print(f"    sta={winner['sta_window']}, lta={winner['lta_window']}, "
-          f"thr={winner['threshold']}")
-    print(f"    MAE={winner['mae']:.2f}, ±3={winner['within_3']*100:.1f}%")
+    print(
+        f"    sta={winner['sta_window']}, lta={winner['lta_window']}, "
+        f"thr={winner['threshold']}"
+    )
+    print(f"    MAE={winner['mae']:.2f}, ±3={winner['within_3'] * 100:.1f}%")
 
     print()
     print("  MAE-optimal:")
-    print(f"    sta={mae_optimal['sta_window']}, lta={mae_optimal['lta_window']}, "
-          f"thr={mae_optimal['threshold']}")
-    print(f"    MAE={mae_optimal['mae']:.2f}, ±3={mae_optimal['within_3']*100:.1f}%")
+    print(
+        f"    sta={mae_optimal['sta_window']}, lta={mae_optimal['lta_window']}, "
+        f"thr={mae_optimal['threshold']}"
+    )
+    print(f"    MAE={mae_optimal['mae']:.2f}, ±3={mae_optimal['within_3'] * 100:.1f}%")
 
     if same_config:
         print()
-        print("  ℹ️  Winner and MAE-optimal are the same config — "
-              "logging once.")
+        print("  ℹ️  Winner and MAE-optimal are the same config — logging once.")
 
     # Get the MLflow manager for the baselines experiment
     mlflow_manager = get_mlflow_manager(
         experiment_name=EXPERIMENT_BASELINES,
-        enable_system_metrics=False,   # no GPU monitoring for a picker
-        enable_autolog=False,          # no PyTorch autolog for a picker
+        enable_system_metrics=False,  # no GPU monitoring for a picker
+        enable_autolog=False,  # no PyTorch autolog for a picker
     )
 
     # Log the winner
@@ -281,7 +284,7 @@ def main(sweep_path_str: str | None, dry_run: bool) -> None:
             print(f"  MAE-optimal run: {mae_run_id}")
         print()
         print(f"  Experiment: {EXPERIMENT_BASELINES}")
-        print(f"  View:       mlflow ui --backend-store-uri sqlite:///mlflow.db")
+        print("  View:       mlflow ui --backend-store-uri sqlite:///mlflow.db")
     print()
 
 

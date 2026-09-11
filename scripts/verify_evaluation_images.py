@@ -59,13 +59,13 @@ ALL_SPLITS = ["train", "val", "test"]
 # HELPERS
 # ============================================================
 
+
 def find_latest_images_dir(base: Path) -> Path | None:
     """Return the most recent images_* directory under `base`."""
     if not base.exists():
         return None
     candidates = [
-        p for p in base.iterdir()
-        if p.is_dir() and p.name.startswith("images_")
+        p for p in base.iterdir() if p.is_dir() and p.name.startswith("images_")
     ]
     if not candidates:
         return None
@@ -81,11 +81,13 @@ def check_file(path: Path) -> tuple[bool, str]:
         return False, f"too small ({size} bytes)"
     try:
         from PIL import Image
+
         img = Image.open(path)
         img.verify()
         # verify() closes the file; reopen to inspect colors
         img = Image.open(path)
         import numpy as np
+
         arr = np.array(img.convert("RGB"))
         unique_colors = len(set(map(tuple, arr.reshape(-1, 3)[::200])))
         if unique_colors < 3:
@@ -148,13 +150,14 @@ def check_mlflow_artifacts() -> bool:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option(
     "--dir",
     "images_dir_str",
     default=None,
     help="Specific images_* directory to check. "
-         "Default: latest under evaluation_results/",
+    "Default: latest under evaluation_results/",
 )
 @click.option(
     "--split",
@@ -233,8 +236,10 @@ def main(images_dir_str: str | None, split_opt: str, mlflow_latest: bool) -> Non
                 if ok:
                     total_optional_ok += 1
             else:
-                print(f"    ⚠️  {fname:<32} missing (optional — expected when"
-                      f" 'pick_sample' column unavailable)")
+                print(
+                    f"    ⚠️  {fname:<32} missing (optional — expected when"
+                    f" 'pick_sample' column unavailable)"
+                )
                 total_optional += 1
 
     print()
@@ -261,8 +266,7 @@ def main(images_dir_str: str | None, split_opt: str, mlflow_latest: bool) -> Non
         sys.exit(0)
     else:
         if not required_ok:
-            print(f"❌ Required images missing: "
-                  f"{total_required - total_required_ok}")
+            print(f"❌ Required images missing: {total_required - total_required_ok}")
         if not mlflow_ok:
             print("❌ MLflow artifact check failed")
         sys.exit(1)
