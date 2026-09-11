@@ -26,6 +26,98 @@ from src.evaluation import EvaluationRunner, ResultExporter
 from src.models.loader import load_evaluation_model
 from src.preprocessing.manifest import load_manifest
 from src.utils.logger import create_task_name, setup_logger
+from src.utils.mlflow_utils import get_mlflow_manager
+
+def _log_evaluation_to_mlflow(
+    cfg,
+    model_path: str,
+    split_results: dict,
+    device_str: str,
+    output_dir,
+    detailed: bool,
+    logger,
+) -> None:
+    """
+    Log evaluation results to MLflow.
+
+    Creates a run in the 'seismic-fbp-evaluation' experiment.
+    Logs all segmentation and first-break metrics with 'eval_{split}_' prefix.
+    Uploads JSON and CSV artifacts.
+
+    Gracefully degrades if MLflow is unavailable.
+    """
+    try:
+        mlflow_manager = get_mlflow_manager(
+            experiment_name="seismic-fbp-evaluation",
+            enable_system_metrics=False,
+            enable_autolog=False,
+        )
+
+        # Start a new run
+        config_dict = {
+            "dataset": cfg.dataset_name,
+            "model_path": model_path,
+            "device": device_str,
+            "splits_evaluated": list(split_results.keys()),
+        }
+
+        mlflow_manager.start_run(
+            config_dict=config_dict,
+            tags={
+                "eval_dataset": cfg.dataset_name,
+                "eval_model_path": model_path,
+                "eval_device": device_str,
+                "eval_type": "evaluation",
+            },
+        )
+
+        # Log metrics for each split
+        all_metrics = {}
+        for split_name, results in split_results.items():
+            seg = results["segmentation"]
+            fb = results["first_break"]
+
+            prefix = f"eval_{split_name}_"
+
+            # Segmentation metrics
+            all_metrics[f"{prefix}accuracy"] = seg["accuracy"]
+            all_metrics[f"{prefix}mean_iou"] = seg["mean_iou"]
+            all_metrics[f"{prefix}mean_f1"] = seg["mean_f1"]
+            all_metrics[f"{prefix}iou_before"] = seg["iou_per_class"][0]
+            all_metrics[f"{prefix}iou_after"] = seg["iou_per_class"][1]
+            all_metrics[f"{prefix}iou_strip"] = seg["iou_per_class"][2]
+
+            # First-break metrics
+            all_metrics[f"{prefix}mae_samples"] = fb["mean_absolute_error"]
+            all_metrics[f"{prefix}median_error"] = fb["median_absolute_error"]
+            all_metrics[f"{prefix}std_error"] = fb["std_absolute_error"]
+            all_metrics[f"{prefix}max_error"] = fb["max_absolute_error"]
+            all_metrics[f"{prefix}min_error"] = fb["min_absolute_error"]
+            all_metrics[f"{prefix}accuracy_within_3"] = fb["accuracy_within_tolerance"]
+            all_metrics[f"{prefix}total_traces"] = fb["total_traces"]
+
+        mlflow_manager.log_metrics(all_metrics, step=0)
+        logger.info(f"✅ Logged {len(all_metrics)} metrics to MLflow")
+
+        # Log artifacts
+
+        output_path = Path(output_dir)
+        for artifact_path in output_path.glob(f"*{cfg.dataset_name}*.json"):
+            mlflow_manager.log_artifact(str(artifact_path), artifact_path="evaluation")
+        for artifact_path in output_path.glob(f"*{cfg.dataset_name}*.csv"):
+            mlflow_manager.log_artifact(str(artifact_path), artifact_path="evaluation")
+
+        logger.info(f"✅ Logged artifacts to MLflow")
+
+        mlflow_manager.end_run()
+        logger.info("✅ MLflow run ended")
+
+    except Exception as e:
+        logger.warning(f"⚠️  MLflow logging failed (non-critical): {e}")
+        logger.warning("Evaluation completed successfully; only MLflow logging failed.")
+
+
+
 
 
 @click.command()
@@ -50,6 +142,11 @@ from src.utils.logger import create_task_name, setup_logger
     help="Which split to evaluate",
 )
 @click.option("--detailed", is_flag=True, help="Generate detailed per-shot metrics")
+
+
+
+
+
 def main(
     config: str,
     model: str,
@@ -157,6 +254,17 @@ def main(
         all_results=all_results,
         all_detailed_results=all_detailed_results,
         detailed=detailed,
+    )
+
+    # ✅ NEW: Log evaluation results to MLflow
+    _log_evaluation_to_mlflow(
+        cfg=cfg,
+        model_path=model,
+        split_results=all_results,
+        device_str=str(device_obj),
+        output_dir=output,
+        detailed=detailed,
+        logger=logger,
     )
 
     logger.info("\n" + "=" * 60)

@@ -1,0 +1,46 @@
+((.venv) ) Ais-iMac:first_break_pick student$ ls -R configs/ src/ scripts/
+configs/:
+bad_config.yaml         default.yaml            halfmile_test_1ms.yaml  production.yaml
+batch_config.yaml       experiment_001.yaml     lalor.yaml              sudbury.yaml
+brunswick.yaml          halfmile.yaml           model_profiles.yaml     sweep_config.yaml
+
+scripts/:
+__pycache__                     run_model_pairs.py              verify_class_weights_bug.py     verify_loader_bug.py
+batch_train.py                  run_pico_all.py                 verify_evaluation_fix.py        verify_metrics_sync.py
+evaluate.py                     search_models.py                verify_evaluation_fix_v2.py     verify_mlflow_search_crash.py
+export_model.py                 sweep_mlflow.py                 verify_evaluation_sampling.py   visualize.py
+preprocess.py                   train.py                        verify_export_shape_bug.py
+
+src/:
+__init__.py     batch           data            models          training        utils
+__pycache__     config.py       evaluation      preprocessing   types.py
+
+src//batch:
+__init__.py     concurrent.py   executor.py     orchestrator.py schemas.py      summary.py      variants.py
+__pycache__     config.py       notifier.py     pipeline.py     smart_config.py types.py
+
+src//data:
+__init__.py             cache.py                hdf5_dataset.py         samplers.py
+__pycache__             chunked_dataset.py      loader.py
+
+src//evaluation:
+__init__.py     __pycache__     exporter.py     runner.py
+
+src//models:
+__init__.py             factory.py              loader.py               nano_unet.py            unet.py
+__pycache__             layers.py               mobilenet.py            pico_unet.py
+efficient_unet.py       light_unet.py           mps_light_unet.py       tiny_unet.py
+
+src//preprocessing:
+__init__.py     __pycache__     chunker.py      manifest.py     pipeline.py     processor.py    writer.py
+
+src//training:
+__init__.py     __pycache__     callbacks.py    losses.py       metrics.py      runner.py       trainer.py      utils
+
+src//training/utils:
+__init__.py     __pycache__     checkpoint.py   device.py       tracking.py
+
+src//utils:
+__init__.py             device_utils.py         logger.py               model_registry.py
+__pycache__             error_patterns.py       memory.py               tensorboard_utils.py
+config_parser.py        hdf5_utils.py           mlflow_utils.py
