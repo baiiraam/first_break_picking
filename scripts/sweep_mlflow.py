@@ -213,7 +213,7 @@ class SweepExperiment:
     ) -> list:
         """Build the training command."""
         cmd = [
-            "python3.12",
+            sys.executable,
             "scripts/train.py",
             "--config",
             f"configs/{dataset.lower()}.yaml",

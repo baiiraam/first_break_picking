@@ -11,12 +11,70 @@ from src.utils.model_registry import get_model_registry
 from .config import get_actual_data_shape, get_dataset_info
 
 
+def _resolve_loss_config(
+    dataset_name: str,
+    global_config: dict[str, Any] | None,
+    auto_config: dict[str, Any] | None,
+    model_params: int,
+) -> dict[str, Any]:
+    """
+    Resolve loss configuration with priority:
+        1. auto_config.loss_overrides[dataset]
+        2. global_config
+        3. Sensible defaults
+
+    Args:
+        dataset_name: Name of the dataset
+        global_config: Global config dict (may be None)
+        auto_config: Auto config dict (may be None)
+        model_params: Number of parameters in the model (for default class weights)
+
+    Returns:
+        Dict with keys: class_weights, loss_function, dice_weight, focal_gamma
+    """
+
+    def _format_weights(weights: Any) -> str:
+        """Convert class weights to comma-separated string."""
+        if isinstance(weights, str):
+            return weights
+        return ",".join(str(w) for w in weights)
+
+    def _lookup(key: str, default: Any) -> Any:
+        """Look up a loss config key with the priority order."""
+        # Priority 1: auto_config.loss_overrides[dataset]
+        if auto_config:
+            value = auto_config.get("loss_overrides", {}).get(dataset_name, {}).get(key)
+            if value is not None:
+                return value
+
+        # Priority 2: global_config
+        if global_config and key in global_config:
+            value = global_config[key]
+            if value is not None:
+                return value
+
+        # Priority 3: default
+        return default
+
+    # Model-size-based default class weights
+    default_weights = [0.1, 0.1, 0.8] if model_params > 1000000 else [0.2, 0.2, 0.6]
+
+    return {
+        "class_weights": _format_weights(_lookup("class_weights", default_weights)),
+        "loss_function": _lookup("loss_function", "combo"),
+        "dice_weight": _lookup("dice_weight", 0.5),
+        "focal_gamma": _lookup("focal_gamma", 2.0),
+    }
+
+
 def calculate_optimal_config(
     model_name: str,
     dataset_name: str,
     available_memory_gb: float,
     device_type: str,
-    logger=None,  # ← Added logger parameter
+    global_config: dict[str, Any] | None = None,
+    auto_config: dict[str, Any] | None = None,
+    logger=None,
 ) -> dict[str, Any]:
     """
     Calculate optimal config with detailed reasoning.
@@ -183,9 +241,12 @@ def calculate_optimal_config(
             "batch_size": optimal_batch,
             "cache_size": optimal_cache,
             "memory_limit_gb": memory_limit_gb,
-            "class_weights": "0.05,0.05,0.9"
-            if profile.params > 1000000
-            else "0.2,0.2,0.6",
+            **_resolve_loss_config(
+                dataset_name=dataset_name,
+                global_config=global_config,
+                auto_config=auto_config,
+                model_params=profile.params,
+            ),
         },
     }
 

@@ -5,16 +5,27 @@ Model loading utilities for evaluation and inference.
 Supports local checkpoints, MLflow URIs, and automatic best model selection.
 """
 
-from typing import cast  # ✅ Add import
+from pathlib import Path
+from typing import Any, cast
 
 import mlflow
 import mlflow.pytorch
 import torch
 
 from src.config import SeismicConfig
-from src.models.mps_light_unet import MPSLightUNet
+from src.models.factory import MODEL_REGISTRY, create_model
 from src.types import LoggerType
 from src.utils.mlflow_utils import format_registered_model_name, get_mlflow_manager
+
+# ============================================================
+# MODEL NAME → KEY LOOKUP
+# ============================================================
+
+# Build display_name → registry_key mapping from the factory registry.
+# This is auto-generated so it stays in sync with factory.py.
+MODEL_NAME_TO_KEY: dict[str, str] = {
+    entry["display_name"]: key for key, entry in MODEL_REGISTRY.items()
+}
 
 
 def load_evaluation_model(
@@ -98,6 +109,68 @@ def _load_from_mlflow(
         raise ValueError(f"Failed to load from MLflow: {e}")
 
 
+def _determine_model_key(
+    model_path: str,
+    checkpoint: Any,
+    logger: LoggerType,
+) -> str:
+    """
+    Determine which model architecture a checkpoint contains.
+
+    Priority:
+        1. checkpoint["model_key"]   (direct evidence, new checkpoints)
+        2. checkpoint["model_name"]  (looked up, all checkpoints)
+        3. Filename                  (matched against display names)
+        4. Raise ValueError          (malformed checkpoint)
+
+    Args:
+        model_path: Path to checkpoint file
+        checkpoint: Loaded checkpoint dict (may be raw state dict)
+        logger: Logger instance
+
+    Returns:
+        Model key (e.g., "pico")
+
+    Raises:
+        ValueError: If the architecture cannot be determined
+    """
+    # Priority 1: model_key in checkpoint
+    if isinstance(checkpoint, dict) and "model_key" in checkpoint:
+        model_key = checkpoint["model_key"]
+        logger.debug(f"Using model_key from checkpoint: {model_key}")
+        return model_key
+
+    # Priority 2: model_name in checkpoint (mapped to key)
+    if isinstance(checkpoint, dict) and "model_name" in checkpoint:
+        model_name = checkpoint["model_name"]
+        if model_name in MODEL_NAME_TO_KEY:
+            model_key = MODEL_NAME_TO_KEY[model_name]
+            logger.info(
+                f"Inferred model_key '{model_key}' from model_name '{model_name}'"
+            )
+            return model_key
+
+    # Priority 3: filename matching
+    # Sort by length descending so "mpslight" is checked before "light"
+    filename_lower = Path(model_path).stem.lower()
+    for display_name in sorted(MODEL_NAME_TO_KEY.keys(), key=len, reverse=True):
+        if display_name.lower() in filename_lower:
+            model_key = MODEL_NAME_TO_KEY[display_name]
+            logger.info(
+                f"Guessed model_key '{model_key}' from "
+                f"filename '{Path(model_path).name}'"
+            )
+            return model_key
+
+    # Priority 4: cannot determine — raise clear error
+    available = sorted(MODEL_NAME_TO_KEY.values())
+    raise ValueError(
+        f"Cannot determine model architecture for {model_path}. "
+        f"Checkpoint has no 'model_key' or 'model_name', and filename "
+        f"doesn't match any known model. Available: {available}"
+    )
+
+
 def _load_from_file(
     model_path: str,
     device_obj: torch.device,
@@ -106,19 +179,27 @@ def _load_from_file(
     """Load a model from a local .pt file."""
     try:
         logger.info(f"Loading model from file: {model_path}")
-        # Use MPSLightUNet as default (works for all UNet variants)
-        model_obj = MPSLightUNet(in_channels=1, out_channels=3)
-
         checkpoint = torch.load(model_path, map_location=device_obj)
 
-        if "model_state_dict" in checkpoint:
-            model_obj.load_state_dict(checkpoint["model_state_dict"])
-        else:
-            model_obj.load_state_dict(checkpoint)
+        # Determine which architecture this checkpoint contains
+        model_key = _determine_model_key(model_path, checkpoint, logger)
+
+        # Create the correct model architecture
+        logger.info(f"Instantiating model: {model_key}")
+        model_obj, display_name = create_model(model_key)
+        logger.info(f"Created model: {display_name}")
+
+        # Extract state dict (handle both wrapped and raw formats)
+        state_dict = (
+            checkpoint["model_state_dict"]
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint
+            else checkpoint
+        )
+        model_obj.load_state_dict(state_dict)
 
         model_obj = model_obj.to(device_obj)
-        logger.info("✅ Model loaded successfully from file")
         model_obj.eval()
+        logger.info("✅ Model loaded successfully from file")
         return model_obj
-    except (KeyError, RuntimeError, OSError) as e:
+    except (KeyError, RuntimeError, OSError, ValueError) as e:
         raise ValueError(f"Failed to load model from file: {e}")

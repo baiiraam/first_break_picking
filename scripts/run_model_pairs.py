@@ -135,7 +135,7 @@ def run_model_pairs(
 
                 # Build command
                 cmd = [
-                    "python3.12",
+                    sys.executable,
                     "scripts/train.py",
                     "--config",
                     f"configs/{dataset.lower()}.yaml",

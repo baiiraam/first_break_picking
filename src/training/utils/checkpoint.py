@@ -26,12 +26,14 @@ class CheckpointManager:
         self,
         config: SeismicConfig,
         model_name: str,
+        model_key: str,
         registry_dir: Path,
         mlflow_manager: Any | None,
         logger: LoggerType,
     ):
         self.config = config
         self.model_name = model_name
+        self.model_key = model_key
         self.registry_dir = registry_dir
         self.mlflow_manager = mlflow_manager
         self.logger = logger
@@ -138,6 +140,7 @@ class CheckpointManager:
             "val_loss": val_loss,
             "config": self.config.to_dict(),
             "model_name": self.model_name,
+            "model_key": self.model_key,
             "dataset_name": self.config.dataset_name,
             "timestamp": timestamp,
         }
@@ -176,39 +179,29 @@ class CheckpointManager:
 
         model_to_save = model.module if isinstance(model, nn.DataParallel) else model
 
-        torch.save(
-            {
-                "model_state_dict": model_to_save.state_dict(),
-                "val_loss": best_val_loss,
-                "config": self.config.to_dict(),
-                "model_name": self.model_name,
-                "dataset_name": self.config.dataset_name,
-                "epoch": epoch,
-                "timestamp": timestamp,
-            },
-            save_path,
-        )
+        # Build checkpoint dict once (reused for both saves)
+        checkpoint_dict = {
+            "model_state_dict": model_to_save.state_dict(),
+            "val_loss": best_val_loss,
+            "config": self.config.to_dict(),
+            "model_name": self.model_name,
+            "model_key": self.model_key,
+            "dataset_name": self.config.dataset_name,
+            "epoch": epoch,
+            "timestamp": timestamp,
+        }
 
+        # Save timestamped archive
+        torch.save(checkpoint_dict, save_path)
         self.logger.info(
             f"Best model saved: {save_path} (val_loss: {best_val_loss:.4f})"
         )
 
-        # Also save as 'best' without timestamp for easy access
+        # Save stable "best" pointer (no timestamp, overwritten each time)
         best_path = (
             self.registry_dir / f"{self.model_name}_{self.config.dataset_name}_best.pt"
         )
-        torch.save(
-            {
-                "model_state_dict": model_to_save.state_dict(),
-                "val_loss": best_val_loss,
-                "config": self.config.to_dict(),
-                "model_name": self.model_name,
-                "dataset_name": self.config.dataset_name,
-                "epoch": epoch,
-                "timestamp": timestamp,
-            },
-            best_path,
-        )
+        torch.save(checkpoint_dict, best_path)
 
         # Log to MLflow if available
         if self.mlflow_manager:

@@ -1,0 +1,7 @@
+# Create a temporary config with an unknown field
+global:
+  epochs: 30
+  unknown_field: "should fail"
+datasets: {}
+variants: []
+

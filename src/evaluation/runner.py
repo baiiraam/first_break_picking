@@ -95,26 +95,30 @@ class EvaluationRunner:
                 y = y.to(self.device_obj)
 
                 outputs = self.model(x)
-                preds = torch.argmax(outputs, dim=1)
 
-                # Update segmentation metrics
+                preds = torch.argmax(outputs, dim=1)  # (B, H, W)
                 seg_metrics.update(preds, y)
 
-                # Extract picks for first-break metrics
-                pred_picks = extract_picks_from_mask(preds.cpu().numpy())
-                true_picks = extract_picks_from_mask(y.cpu().numpy())
-                fb_metrics.update(pred_picks, true_picks)
+                # Iterate over batch
+                preds_np = preds.cpu().numpy()  # (B, H, W)
+                y_np = y.cpu().numpy()  # (B, H, W)
 
-                # Per-shot detailed metrics
-                if self.detailed:
-                    self._collect_detailed_errors(
-                        pred_picks=pred_picks,
-                        true_picks=true_picks,
-                        batch_idx=batch_idx,
-                        dataset_obj=dataset_obj,
-                        shot_ids=shot_ids,
-                        shot_errors=shot_errors,
-                    )
+                for b in range(preds_np.shape[0]):
+                    pred_picks_b = extract_picks_from_mask(preds_np[b])  # (H,)
+                    true_picks_b = extract_picks_from_mask(y_np[b])  # (H,)
+
+                    fb_metrics.update(pred_picks_b, true_picks_b)
+
+                    if self.detailed:
+                        self._collect_detailed_errors(
+                            pred_picks=pred_picks_b,
+                            true_picks=true_picks_b,
+                            batch_idx=batch_idx,
+                            shot_b_idx=b,  # NEW parameter
+                            dataset_obj=dataset_obj,
+                            shot_ids=shot_ids,
+                            shot_errors=shot_errors,
+                        )
 
         metrics = self._build_metrics_dict(
             split_name=split_name,
@@ -138,6 +142,7 @@ class EvaluationRunner:
         pred_picks: np.ndarray,
         true_picks: np.ndarray,
         batch_idx: int,
+        shot_b_idx: int,
         dataset_obj: Any,
         shot_ids: list[int],
         shot_errors: list[float],
@@ -149,13 +154,11 @@ class EvaluationRunner:
                 shot_errors.append(float(error))
 
                 try:
-                    shot_id = dataset_obj.get_shot_id(
-                        batch_idx * self.cfg.batch_size + i
-                    )
+                    global_shot_idx = batch_idx * self.cfg.batch_size + shot_b_idx
+                    shot_id = dataset_obj.get_shot_id(global_shot_idx)
                     shot_ids.append(int(shot_id))
                 except (AttributeError, IndexError, KeyError):
-                    # Fallback: use index if shot_id not available
-                    shot_ids.append(batch_idx * self.cfg.batch_size + i)
+                    shot_ids.append(global_shot_idx)
 
     def _build_metrics_dict(
         self,
@@ -192,7 +195,7 @@ class EvaluationRunner:
             {
                 "shot_id": shot_ids,
                 "error_samples": shot_errors,
-                "error_ms": np.array(shot_errors) * 2,  # 2ms per sample
+                "error_ms": np.array(shot_errors) * self.cfg.sampling_interval_ms,
             }
         )
 

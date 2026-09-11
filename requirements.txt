@@ -95,6 +95,7 @@ MarkupSafe==3.0.3
 matplotlib==3.11.1
 matplotlib-inline==0.2.2
 mistune==3.3.4
+ml_dtypes==0.6.0
 mlflow==3.15.2
 mlflow-skinny==3.15.2
 mlflow-tracing==3.15.2
@@ -111,6 +112,9 @@ networkx==3.6.1
 notebook==7.6.2
 notebook_shim==0.2.4
 numpy==2.5.2
+onnx==1.22.0
+onnx-ir==1.0.0
+onnxscript==0.7.2
 opentelemetry-api==1.44.0
 opentelemetry-proto==1.44.0
 opentelemetry-sdk==1.44.0

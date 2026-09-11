@@ -6,11 +6,13 @@ Typed configuration schemas using Pydantic.
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class GlobalConfig(BaseModel):
     """Global batch training configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     epochs: int = Field(default=30, ge=1)
     device: str = Field(default="mps", pattern="^(cpu|cuda|mps)$")
@@ -30,9 +32,30 @@ class GlobalConfig(BaseModel):
     concurrent: bool = False
     max_workers: int = Field(default=2, ge=1, le=8)
 
+    # ─── Loss configuration ───
+    loss_function: str = Field(
+        default="combo",
+        pattern="^(cross_entropy|focal|dice|combo)$",
+    )
+    class_weights: list[float] = Field(default_factory=lambda: [0.05, 0.05, 0.9])
+    dice_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+    focal_gamma: float = Field(default=2.0, ge=0.0)
+
+    @field_validator("class_weights")
+    @classmethod
+    def validate_class_weights(cls, v: list[float]) -> list[float]:
+        """Validate class weights: 3 non-negative values."""
+        if len(v) != 3:
+            raise ValueError(f"class_weights must have exactly 3 values, got {len(v)}")
+        if any(w < 0 for w in v):
+            raise ValueError(f"class_weights must be non-negative, got {v}")
+        return v
+
 
 class MonitoringConfig(BaseModel):
     """Monitoring and notification configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     memory_warning_threshold_gb: float = Field(default=16.0, ge=0)
     memory_critical_threshold_gb: float = Field(default=20.0, ge=0)
@@ -44,6 +67,8 @@ class MonitoringConfig(BaseModel):
 
 class AutoConfig(BaseModel):
     """Auto-configuration settings."""
+
+    model_config = ConfigDict(extra="forbid")
 
     strategy: str = Field(default="smart", pattern="^(smart|greedy|conservative)$")
     memory_usage: float = Field(default=0.85, ge=0.5, le=0.95)
@@ -66,6 +91,11 @@ class AutoConfig(BaseModel):
 class BatchConfig(BaseModel):
     """Complete batch configuration."""
 
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+
     global_: GlobalConfig = Field(alias="global")
     datasets: dict[str, dict[str, Any]] = Field(default_factory=dict)
     variants: list[dict[str, Any]] = Field(default_factory=list)
@@ -79,6 +109,3 @@ class BatchConfig(BaseModel):
         if isinstance(v, dict):
             return v
         return {}
-
-    class Config:
-        populate_by_name = True

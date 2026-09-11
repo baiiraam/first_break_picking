@@ -43,7 +43,7 @@ def run_pico_on_all_datasets(interactive: bool = True):
         log_file = f"logs/pico_runs/pico_{dataset}_{TIMESTAMP}.log"
 
         cmd = [
-            "python3.12",
+            sys.executable,
             "scripts/train.py",
             "--config",
             f"configs/{dataset_lower}.yaml",
