@@ -89,6 +89,5 @@ def validate_shot_data(shot_data: np.ndarray, picker_name: str) -> None:
         )
     if not np.isfinite(shot_data).all():
         raise ValueError(
-            f"[{picker_name}] shot_data contains non-finite values "
-            f"(NaN or Inf)"
+            f"[{picker_name}] shot_data contains non-finite values (NaN or Inf)"
         )

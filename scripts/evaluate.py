@@ -63,16 +63,19 @@ def _log_evaluation_to_mlflow(
             "splits_evaluated": list(split_results.keys()),
         }
 
-        # Determine model type from the model path for tagging
+        # Determine model type from the model path for tagging.
+        # Match longest name first (e.g., "MPSLightUNet" before "UNet")
+        # so a path containing "mpslightunet" doesn't get tagged "UNet".
         model_type_tag = "unknown"
-        # Best-effort: extract a short name from the path
         try:
             from src.models.loader import MODEL_NAME_TO_KEY  # noqa: F401
-            for display_name in MODEL_NAME_TO_KEY.keys():
+            for display_name in sorted(
+                MODEL_NAME_TO_KEY.keys(), key=len, reverse=True
+            ):
                 if display_name.lower() in model_path.lower():
                     model_type_tag = display_name
                     break
-        except Exception:
+        except (ImportError, AttributeError):
             pass  # keep "unknown"
 
         tags = evaluation_tags(
@@ -125,7 +128,7 @@ def _log_evaluation_to_mlflow(
         for artifact_path in output_path.glob(f"*{cfg.dataset_name}*.csv"):
             mlflow_manager.log_artifact(str(artifact_path), artifact_path="evaluation")
 
-        logger.info(f"✅ Logged artifacts to MLflow")
+        logger.info("✅ Logged artifacts to MLflow")
 
         mlflow_manager.end_run()
         logger.info("✅ MLflow run ended")
@@ -133,9 +136,6 @@ def _log_evaluation_to_mlflow(
     except Exception as e:
         logger.warning(f"⚠️  MLflow logging failed (non-critical): {e}")
         logger.warning("Evaluation completed successfully; only MLflow logging failed.")
-
-
-
 
 
 @click.command()
@@ -166,10 +166,6 @@ def _log_evaluation_to_mlflow(
     default=None,
     help="MLflow phase tag (e.g., 'baseline-v1.0'). Default: 'unset'.",
 )
-
-
-
-
 def main(
     config: str,
     model: str,
@@ -179,7 +175,7 @@ def main(
     dataset: str,
     split: str,
     detailed: bool,
-    phase: str | None
+    phase: str | None,
 ):
     """Evaluate the trained model on specified set."""
 
@@ -194,7 +190,7 @@ def main(
     if dataset:
         cfg.dataset_name = dataset
     if phase:
-        cfg.phase=phase
+        cfg.phase = phase
 
     task_name = create_task_name(cfg, "evaluate")
     logger = setup_logger(task_name=task_name)

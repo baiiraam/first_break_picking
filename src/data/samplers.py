@@ -12,8 +12,8 @@ This achieves the same I/O locality as running without shuffling,
 while maintaining the randomness needed for stable SGD.
 """
 
-import math
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import numpy as np
 from loguru import logger

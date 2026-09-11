@@ -245,7 +245,7 @@ def calculate_optimal_config(
             "optimal_cache": {
                 "value": optimal_cache,
                 "policy": cache_policy,
-                "max_cache_by_memory": max_cache_by_memory,   # ← NEW structured field
+                "max_cache_by_memory": max_cache_by_memory,  # ← NEW structured field
                 "description": (
                     f"chunk_aware={chunk_aware}, "
                     f"recommended={recommended_cache}, "

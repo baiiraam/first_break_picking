@@ -153,7 +153,7 @@ class STALTAPicker(BaselinePicker):
         if self.min_pick_sample >= n_samples:
             return 0
 
-        search = ratio[self.min_pick_sample:]
+        search = ratio[self.min_pick_sample :]
         above = search > self.threshold
 
         if not np.any(above):

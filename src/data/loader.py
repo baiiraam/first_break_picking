@@ -57,26 +57,26 @@ def create_dataloaders(
     # Decide sampling strategy
     if cfg.chunk_aware_sampling:
         from src.data.samplers import ChunkAwareSampler
-        
+
         sampler = ChunkAwareSampler(
             dataset=train_dataset,
             seed=cfg.random_seed,
             shuffle_chunks=True,
             shuffle_within=True,
         )
-        
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=cfg.batch_size,
-            shuffle=False,                        # ← Must be False when using sampler
-            sampler=sampler,                      # ← NEW
+            shuffle=False,  # ← Must be False when using sampler
+            sampler=sampler,  # ← NEW
             num_workers=cfg.num_workers,
             pin_memory=cfg.device == "cuda",
             prefetch_factor=2 if cfg.num_workers > 0 else None,
             persistent_workers=cfg.num_workers > 0,
             worker_init_fn=sampler.worker_init_fn if cfg.num_workers > 0 else None,
         )
-        
+
         logger.info(
             f"🔀 Using ChunkAwareSampler for training "
             f"(chunks={sampler._num_chunks}, seed={cfg.random_seed})"
@@ -85,13 +85,13 @@ def create_dataloaders(
         train_loader = DataLoader(
             train_dataset,
             batch_size=cfg.batch_size,
-            shuffle=True,                         # ← Fallback to full shuffle
+            shuffle=True,  # ← Fallback to full shuffle
             num_workers=cfg.num_workers,
             pin_memory=cfg.device == "cuda",
             prefetch_factor=2 if cfg.num_workers > 0 else None,
             persistent_workers=cfg.num_workers > 0,
         )
-        
+
         logger.info("🔀 Using full shuffle for training (chunk_aware_sampling=False)")
 
     val_loader = DataLoader(

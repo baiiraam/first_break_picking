@@ -21,6 +21,7 @@ from typing import Any, Literal
 import mlflow
 import mlflow.pytorch
 from loguru import logger
+
 from src.utils.tracking_conventions import EXPERIMENT_TRAINING
 
 
@@ -123,7 +124,7 @@ class MLflowManager:
 
         self.current_run = mlflow.start_run(
             run_name=run_name,
-            experiment_id=self.experiment_id,   # ← NEW
+            experiment_id=self.experiment_id,  # ← NEW
         )
         self.run_id = self.current_run.info.run_id
 

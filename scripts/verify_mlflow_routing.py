@@ -32,10 +32,10 @@ from src.utils.tracking_conventions import (
     EXPERIMENT_TRAINING,
 )
 
-
 # ============================================================
 # CHECKS
 # ============================================================
+
 
 def check_singleton() -> bool:
     print()
@@ -59,7 +59,9 @@ def check_singleton() -> bool:
     if c is d:
         print("  ✅ Same (different) experiment → same instance")
     else:
-        print("  ❌ Different experiment returned DIFFERENT instances for the same name")
+        print(
+            "  ❌ Different experiment returned DIFFERENT instances for the same name"
+        )
         passed = False
 
     if a is not c:
@@ -105,11 +107,10 @@ def check_run_id_propagation() -> bool:
     # The SAME instance should now have that run_id
     same_manager = get_mlflow_manager(EXPERIMENT_TRAINING)
     if same_manager.run_id == run_id:
-        print(f"  ✅ Same manager instance exposes run_id")
+        print("  ✅ Same manager instance exposes run_id")
     else:
         print(
-            f"  ❌ Manager returned run_id={same_manager.run_id!r}, "
-            f"expected {run_id!r}"
+            f"  ❌ Manager returned run_id={same_manager.run_id!r}, expected {run_id!r}"
         )
         passed = False
 
@@ -150,7 +151,7 @@ def check_routing(run_id: str) -> bool:
     if passed:
         print("  ✅ Run is in the correct experiment")
     else:
-        print(f"  ❌ Run is in WRONG experiment")
+        print("  ❌ Run is in WRONG experiment")
 
     print(f"  {'✅ PASS' if passed else '❌ FAIL'}")
     return passed
@@ -160,13 +161,13 @@ def check_routing(run_id: str) -> bool:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option(
     "--keep-smoke-run",
     is_flag=True,
     default=False,
-    help="Keep the dummy smoke-test run in MLflow (default: keep anyway, "
-         "just tagged).",
+    help="Keep the dummy smoke-test run in MLflow (default: keep anyway, just tagged).",
 )
 def main(keep_smoke_run: bool) -> None:
     print("=" * 80)
@@ -213,7 +214,7 @@ def main(keep_smoke_run: bool) -> None:
     if smoke_run_id:
         print()
         print(f"  Smoke-test run ID: {smoke_run_id}")
-        print(f"  (tagged verify_smoke_test=true; filter or delete it in the UI)")
+        print("  (tagged verify_smoke_test=true; filter or delete it in the UI)")
 
     print()
     if all_passed:

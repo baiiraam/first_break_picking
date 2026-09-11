@@ -30,7 +30,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.batch.smart_config import calculate_optimal_config
 
-
 # ============================================================
 # TEST MATRIX
 # ============================================================
@@ -41,7 +40,7 @@ MODELS = ["pico", "tiny", "mpslight"]
 # Halfmile has many small chunks; Lalor has fewer, larger chunks.
 DATASETS = {
     "Halfmile": {"num_chunks": 8, "total_shots": 124},
-    "Lalor":    {"num_chunks": 5, "total_shots": 95},
+    "Lalor": {"num_chunks": 5, "total_shots": 95},
 }
 
 SAMPLER_MODES = [True, False]
@@ -61,6 +60,7 @@ RESULT_PATH = Path("evaluation_results/verify_sampler_cache/after.json")
 # get_actual_data_shape() which read from disk. We patch them so the
 # test is self-contained and deterministic.
 
+
 def _make_fake_dataset_info(num_chunks: int, total_shots: int):
     def _fake_get_dataset_info(dataset_name: str) -> dict[str, Any]:
         return {
@@ -71,6 +71,7 @@ def _make_fake_dataset_info(num_chunks: int, total_shots: int):
             "chunk_size": 69,
             "num_chunks": num_chunks,
         }
+
     return _fake_get_dataset_info
 
 
@@ -81,6 +82,7 @@ def _fake_get_actual_data_shape(dataset_name: str) -> tuple[int, int]:
 # ============================================================
 # RUN MATRIX
 # ============================================================
+
 
 def run_matrix() -> list[dict[str, Any]]:
     """
@@ -118,27 +120,33 @@ def run_matrix() -> list[dict[str, Any]]:
                     )
 
                     if not config:
-                        rows.append({
-                            "model": model_name,
-                            "dataset": dataset_name,
-                            "sampler": sampler_on,
-                            "error": "calculate_optimal_config returned empty",
-                        })
+                        rows.append(
+                            {
+                                "model": model_name,
+                                "dataset": dataset_name,
+                                "sampler": sampler_on,
+                                "error": "calculate_optimal_config returned empty",
+                            }
+                        )
                         continue
 
                     final = config["final_config"]
                     cache_calc = config["calculations"]["optimal_cache"]
 
-                    rows.append({
-                        "model": model_name,
-                        "dataset": dataset_name,
-                        "sampler": sampler_on,
-                        "optimal_cache": final["cache_size"],
-                        "optimal_batch": final["batch_size"],
-                        "memory_limit_gb": final["memory_limit_gb"],
-                        "cache_policy": cache_calc.get("policy", "N/A"),
-                        "max_cache_by_memory": cache_calc.get("max_cache_by_memory"),
-                    })
+                    rows.append(
+                        {
+                            "model": model_name,
+                            "dataset": dataset_name,
+                            "sampler": sampler_on,
+                            "optimal_cache": final["cache_size"],
+                            "optimal_batch": final["batch_size"],
+                            "memory_limit_gb": final["memory_limit_gb"],
+                            "cache_policy": cache_calc.get("policy", "N/A"),
+                            "max_cache_by_memory": cache_calc.get(
+                                "max_cache_by_memory"
+                            ),
+                        }
+                    )
     finally:
         sc.get_dataset_info = original_get_dataset_info
         sc.get_actual_data_shape = original_get_actual_data_shape
@@ -149,6 +157,7 @@ def run_matrix() -> list[dict[str, Any]]:
 # ============================================================
 # PRINTING
 # ============================================================
+
 
 def print_rows(title: str, rows: list[dict[str, Any]]) -> None:
     print()
@@ -164,13 +173,13 @@ def print_rows(title: str, rows: list[dict[str, Any]]) -> None:
         if "error" in r:
             print(
                 f"{r['model']:<10} {r['dataset']:<10} "
-                f"{str(r['sampler']):<8} ERROR: {r['error']}"
+                f"{r['sampler']!s:<8} ERROR: {r['error']}"
             )
             continue
         max_mem = r.get("max_cache_by_memory")
         max_mem_str = str(max_mem) if max_mem is not None else "N/A"
         print(
-            f"{r['model']:<10} {r['dataset']:<10} {str(r['sampler']):<8} "
+            f"{r['model']:<10} {r['dataset']:<10} {r['sampler']!s:<8} "
             f"{r['optimal_cache']:<7} {max_mem_str:<10} "
             f"{r['optimal_batch']:<7} "
             f"{r['memory_limit_gb']:<10} {r['cache_policy']:<40}"
@@ -181,6 +190,7 @@ def print_rows(title: str, rows: list[dict[str, Any]]) -> None:
 # ============================================================
 # SAVE / LOAD
 # ============================================================
+
 
 def write_baseline(rows: list[dict[str, Any]]) -> None:
     BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -209,11 +219,10 @@ def write_after(rows: list[dict[str, Any]]) -> None:
 # COMPARISON / SUCCESS CRITERIA
 # ============================================================
 
+
 def _index_rows(rows: list[dict[str, Any]]) -> dict[tuple, dict[str, Any]]:
     return {
-        (r["model"], r["dataset"], r["sampler"]): r
-        for r in rows
-        if "error" not in r
+        (r["model"], r["dataset"], r["sampler"]): r for r in rows if "error" not in r
     }
 
 
@@ -266,7 +275,7 @@ def compare_and_report(
         ra = a.get(key)
 
         if rb is None or ra is None:
-            print(f"{model:<10} {dataset:<10} {str(sampler):<8} MISSING ROW")
+            print(f"{model:<10} {dataset:<10} {sampler!s:<8} MISSING ROW")
             continue
 
         cache_b = rb["optimal_cache"]
@@ -327,7 +336,7 @@ def compare_and_report(
         max_by_mem_str = str(max_by_mem) if max_by_mem is not None else "N/A"
 
         print(
-            f"{model:<10} {dataset:<10} {str(sampler):<8} "
+            f"{model:<10} {dataset:<10} {sampler!s:<8} "
             f"{cache_b}→{cache_a:<9} {max_by_mem_str:<10} "
             f"{mem_b}→{mem_a:<13} {verdict:<30}"
         )
@@ -346,16 +355,26 @@ def compare_and_report(
     print("=" * 110)
     print("SUMMARY")
     print("=" * 110)
-    print(f"Rule 1  (sampler-ON cache in [1, min(3, num_chunks)]): "
-          f"{'✅ PASS' if not rule1_fail else '❌ FAIL: ' + ', '.join(rule1_fail)}")
-    print(f"Rule 2  (sampler-OFF unchanged):                       "
-          f"{'✅ PASS' if not rule2_fail else '❌ FAIL: ' + ', '.join(rule2_fail)}")
-    print(f"Rule 3  (batch unchanged everywhere):                  "
-          f"{'✅ PASS' if not rule3_fail else '❌ FAIL: ' + ', '.join(rule3_fail)}")
-    print(f"Rule 4a (sampler-ON cache <= memory ceiling):          "
-          f"{'✅ PASS' if not rule4a_fail else '❌ FAIL: ' + ', '.join(rule4a_fail)}")
-    print(f"Rule 4b (sampler-ON cache <= baseline + 1):            "
-          f"{'✅ PASS' if not rule4b_fail else '❌ FAIL: ' + ', '.join(rule4b_fail)}")
+    print(
+        f"Rule 1  (sampler-ON cache in [1, min(3, num_chunks)]): "
+        f"{'✅ PASS' if not rule1_fail else '❌ FAIL: ' + ', '.join(rule1_fail)}"
+    )
+    print(
+        f"Rule 2  (sampler-OFF unchanged):                       "
+        f"{'✅ PASS' if not rule2_fail else '❌ FAIL: ' + ', '.join(rule2_fail)}"
+    )
+    print(
+        f"Rule 3  (batch unchanged everywhere):                  "
+        f"{'✅ PASS' if not rule3_fail else '❌ FAIL: ' + ', '.join(rule3_fail)}"
+    )
+    print(
+        f"Rule 4a (sampler-ON cache <= memory ceiling):          "
+        f"{'✅ PASS' if not rule4a_fail else '❌ FAIL: ' + ', '.join(rule4a_fail)}"
+    )
+    print(
+        f"Rule 4b (sampler-ON cache <= baseline + 1):            "
+        f"{'✅ PASS' if not rule4b_fail else '❌ FAIL: ' + ', '.join(rule4b_fail)}"
+    )
     print()
 
     if passed:
@@ -369,6 +388,7 @@ def compare_and_report(
 # ============================================================
 # CLI
 # ============================================================
+
 
 @click.command()
 @click.option(

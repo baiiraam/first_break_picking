@@ -24,14 +24,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 HDF5_PATH = "data/raw/Halfmile3D_add_geom_sorted.hdf5"
-N_SHOTS_TO_SAMPLE = 5          # how many shots to look at in detail
-N_TRACES_PER_SHOT = 5          # traces per shot for the ASCII view
-SAMPLING_INTERVAL_MS = 2.0     # from configs/halfmile.yaml
+N_SHOTS_TO_SAMPLE = 5  # how many shots to look at in detail
+N_TRACES_PER_SHOT = 5  # traces per shot for the ASCII view
+SAMPLING_INTERVAL_MS = 2.0  # from configs/halfmile.yaml
 
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def banner(title: str) -> None:
     print()
@@ -66,6 +67,7 @@ def ascii_trace(trace: np.ndarray, width: int = 70, height: int = 6) -> list[str
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     if not os.path.exists(HDF5_PATH):
@@ -145,7 +147,7 @@ def main() -> int:
             shotids, return_index=True, return_counts=True
         )
         print(f"  Number of unique shots: {len(unique_shots)}")
-        print(f"  Trace counts per shot:")
+        print("  Trace counts per shot:")
         print(f"    min:  {counts.min()}")
         print(f"    max:  {counts.max()}")
         print(f"    mean: {counts.mean():.1f}")
@@ -161,8 +163,10 @@ def main() -> int:
 
             print()
             print("-" * 78)
-            print(f"Shot {s_idx}:  SHOTID={shot_id}  "
-                  f"rows={start}..{end}  n_traces={counts[s_idx]}")
+            print(
+                f"Shot {s_idx}:  SHOTID={shot_id}  "
+                f"rows={start}..{end}  n_traces={counts[s_idx]}"
+            )
             print("-" * 78)
 
             shot_data = data_ds[start:end, :]
@@ -179,16 +183,22 @@ def main() -> int:
                 continue
 
             valid_picks_samples = valid_picks_ms / SAMPLING_INTERVAL_MS
-            print(f"  Valid picks: {len(valid_picks_ms)}/{len(shot_picks)} "
-                  f"({100 * len(valid_picks_ms) / len(shot_picks):.1f}%)")
-            print(f"  Pick sample range: "
-                  f"[{valid_picks_samples.min():.1f}, {valid_picks_samples.max():.1f}]  "
-                  f"median={np.median(valid_picks_samples):.1f}")
+            print(
+                f"  Valid picks: {len(valid_picks_ms)}/{len(shot_picks)} "
+                f"({100 * len(valid_picks_ms) / len(shot_picks):.1f}%)"
+            )
+            print(
+                f"  Pick sample range: "
+                f"[{valid_picks_samples.min():.1f}, {valid_picks_samples.max():.1f}]  "
+                f"median={np.median(valid_picks_samples):.1f}"
+            )
 
             # Show a few traces near their picks
             print()
-            print(f"  First {N_TRACES_PER_SHOT} traces (ASCII, "
-                  f"downsampled to ~70 columns):")
+            print(
+                f"  First {N_TRACES_PER_SHOT} traces (ASCII, "
+                f"downsampled to ~70 columns):"
+            )
             for t in range(min(N_TRACES_PER_SHOT, shot_data.shape[0])):
                 tr = shot_data[t]
                 pick_ms = shot_picks[t]
@@ -200,9 +210,11 @@ def main() -> int:
                 # Local stats
                 tr_std = tr.std()
 
-                print(f"    trace {t:3d}  {pick_str}  "
-                      f"std={tr_std:.4f}  "
-                      f"[{tr.min():.3f}, {tr.max():.3f}]")
+                print(
+                    f"    trace {t:3d}  {pick_str}  "
+                    f"std={tr_std:.4f}  "
+                    f"[{tr.min():.3f}, {tr.max():.3f}]"
+                )
                 for line in ascii_trace(tr, width=70, height=4):
                     print(f"      |{line}|")
 
@@ -219,7 +231,9 @@ def main() -> int:
                         post_rms = float(np.sqrt(np.mean(tr[post_lo:post_hi] ** 2)))
                         ratio = post_rms / (pre_rms + 1e-12)
                         print(f"      RMS pre-pick [{pre_lo}..{pre_hi}]: {pre_rms:.4f}")
-                        print(f"      RMS post-pick[{post_lo}..{post_hi}]: {post_rms:.4f}")
+                        print(
+                            f"      RMS post-pick[{post_lo}..{post_hi}]: {post_rms:.4f}"
+                        )
                         print(f"      Ratio post/pre: {ratio:.2f}×")
 
     banner("DONE")

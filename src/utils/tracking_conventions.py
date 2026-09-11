@@ -53,6 +53,7 @@ CANONICAL_TAG_KEYS = (TAG_DATASET, TAG_MODEL_TYPE, TAG_PHASE, TAG_ENV)
 # HELPERS
 # ============================================================
 
+
 def _clean(tags: dict[str, Any]) -> dict[str, str]:
     """
     Coerce all values to strings and drop None entries.
@@ -75,12 +76,14 @@ def training_tags(
     env: str = "research",
 ) -> dict[str, str]:
     """Canonical tags for a training run."""
-    return _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: model_type,
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
+    return _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: model_type,
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
 
 
 def evaluation_tags(
@@ -90,12 +93,14 @@ def evaluation_tags(
     env: str = "research",
 ) -> dict[str, str]:
     """Canonical tags for an evaluation run."""
-    return _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: model_type,
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
+    return _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: model_type,
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
 
 
 def baseline_tags(
@@ -111,12 +116,14 @@ def baseline_tags(
     training runs — this way, "find all runs by model type" queries
     work for both ML and classical methods.
     """
-    return _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: method,
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
+    return _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: method,
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
 
 
 def sweep_tags(
@@ -133,14 +140,20 @@ def sweep_tags(
     Adds two sweep-specific tags (`model`, `loss`, `sweep_id`) on top
     of the canonical four.
     """
-    base = _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: model,
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
-    base.update(_clean({
-        "loss": loss,
-        "sweep_id": sweep_id,
-    }))
+    base = _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: model,
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
+    base.update(
+        _clean(
+            {
+                "loss": loss,
+                "sweep_id": sweep_id,
+            }
+        )
+    )
     return base

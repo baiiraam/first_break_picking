@@ -30,13 +30,13 @@ from src.utils.tracking_conventions import (
     EXPERIMENT_TRAINING,
 )
 
-
 BASELINE_PHASE = "baseline-v1.0"
 
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def get_run_metrics(client, run_id: str) -> dict[str, float]:
     """Fetch all metrics for a run as a flat dict."""
@@ -137,6 +137,7 @@ def print_run_summary(
 # ============================================================
 # MAIN
 # ============================================================
+
 
 @click.command()
 @click.option(
@@ -239,8 +240,8 @@ def main(phase: str) -> None:
         print(f"  Eval test_iou:     {test_iou:.4f}")
         if test_iou > val_iou + 0.05:
             print(
-                f"  ⚠️  test_iou is more than 5 pp HIGHER than val_iou. "
-                f"This is suspicious (val usually ≈ test or higher)."
+                "  ⚠️  test_iou is more than 5 pp HIGHER than val_iou. "
+                "This is suspicious (val usually ≈ test or higher)."
             )
         else:
             print("  ✅ test_iou is consistent with val_iou.")

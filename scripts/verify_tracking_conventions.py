@@ -38,7 +38,6 @@ from src.utils.tracking_conventions import (
     training_tags,
 )
 
-
 # ============================================================
 # EXPECTED VALUES
 # ============================================================
@@ -61,6 +60,7 @@ EXPECTED_TAG_KEYS = {
 # ============================================================
 # CHECKS
 # ============================================================
+
 
 def check_experiment_constants() -> bool:
     """Assert each experiment-name constant matches the expected string."""
@@ -165,41 +165,51 @@ def check_helpers() -> bool:
 
     # training_tags
     t = training_tags(dataset="Halfmile", model_type="MPSLightUNet")
-    print(f"\n  training_tags('Halfmile', 'MPSLightUNet'):")
+    print("\n  training_tags('Halfmile', 'MPSLightUNet'):")
     for k, v in t.items():
         print(f"    {k}: {v}")
-    ok = check_helper_shape("training_tags", t) and check_helper_canonical_keys("training_tags", t)
+    ok = check_helper_shape("training_tags", t) and check_helper_canonical_keys(
+        "training_tags", t
+    )
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     passed = passed and ok
 
     # evaluation_tags
     e = evaluation_tags(dataset="Halfmile", model_type="MPSLightUNet")
-    print(f"\n  evaluation_tags('Halfmile', 'MPSLightUNet'):")
+    print("\n  evaluation_tags('Halfmile', 'MPSLightUNet'):")
     for k, v in e.items():
         print(f"    {k}: {v}")
-    ok = check_helper_shape("evaluation_tags", e) and check_helper_canonical_keys("evaluation_tags", e)
+    ok = check_helper_shape("evaluation_tags", e) and check_helper_canonical_keys(
+        "evaluation_tags", e
+    )
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     passed = passed and ok
 
     # baseline_tags
     b = baseline_tags(dataset="Halfmile", method="STALTA")
-    print(f"\n  baseline_tags('Halfmile', 'STALTA'):")
+    print("\n  baseline_tags('Halfmile', 'STALTA'):")
     for k, v in b.items():
         print(f"    {k}: {v}")
-    ok = check_helper_shape("baseline_tags", b) and check_helper_canonical_keys("baseline_tags", b)
+    ok = check_helper_shape("baseline_tags", b) and check_helper_canonical_keys(
+        "baseline_tags", b
+    )
     # Also assert phase defaults to baseline-v1.0
     if b.get(TAG_PHASE) != "baseline-v1.0":
-        print(f"    ❌ baseline_tags: phase should default to 'baseline-v1.0', got {b.get(TAG_PHASE)!r}")
+        print(
+            f"    ❌ baseline_tags: phase should default to 'baseline-v1.0', got {b.get(TAG_PHASE)!r}"
+        )
         ok = False
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     passed = passed and ok
 
     # sweep_tags
     s = sweep_tags(dataset="Halfmile", model="pico", loss="combo", sweep_id="abc123")
-    print(f"\n  sweep_tags('Halfmile', 'pico', 'combo', 'abc123'):")
+    print("\n  sweep_tags('Halfmile', 'pico', 'combo', 'abc123'):")
     for k, v in s.items():
         print(f"    {k}: {v}")
-    ok = check_helper_shape("sweep_tags", s) and check_helper_canonical_keys("sweep_tags", s)
+    ok = check_helper_shape("sweep_tags", s) and check_helper_canonical_keys(
+        "sweep_tags", s
+    )
     # Extra sweep-specific keys
     for extra in ("loss", "sweep_id"):
         if extra not in s:
@@ -219,7 +229,9 @@ def check_none_handling() -> bool:
 
     t = training_tags(dataset="Halfmile", model_type="MPSLightUNet", phase=None)  # type: ignore[arg-type]
     if TAG_PHASE in t:
-        print(f"  ❌ phase=None was kept as {t[TAG_PHASE]!r}; expected it to be dropped")
+        print(
+            f"  ❌ phase=None was kept as {t[TAG_PHASE]!r}; expected it to be dropped"
+        )
         return False
     print(f"  ✅ phase=None dropped from output (keys: {sorted(t.keys())})")
     return True
@@ -228,6 +240,7 @@ def check_none_handling() -> bool:
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     print("=" * 80)

@@ -40,7 +40,6 @@ from src.baselines import STALTAPicker
 from src.training.metrics import FirstBreakMetrics
 from src.utils.hdf5_utils import load_shot_data, load_shot_indices
 
-
 # ============================================================
 # SWEEP GRID
 # ============================================================
@@ -71,6 +70,7 @@ DEFAULT_OUTPUT_DIR = "evaluation_results/sta_lta_sweep"
 # HELPERS
 # ============================================================
 
+
 def load_shots(n_shots: int) -> list[tuple[np.ndarray, np.ndarray]]:
     """Load the first N shots from Halfmile HDF5."""
     if not os.path.exists(HDF5_PATH):
@@ -87,9 +87,9 @@ def load_shots(n_shots: int) -> list[tuple[np.ndarray, np.ndarray]]:
         shot_data, shot_picks_ms = load_shot_data(
             HDF5_PATH, start, end, TARGET_TRACES, N_SAMPLES
         )
-        shot_picks_samples = np.round(
-            shot_picks_ms / SAMPLING_INTERVAL_MS
-        ).astype(np.int64)
+        shot_picks_samples = np.round(shot_picks_ms / SAMPLING_INTERVAL_MS).astype(
+            np.int64
+        )
         shots.append((shot_data, shot_picks_samples))
 
     return shots
@@ -202,18 +202,24 @@ def print_table(rows: list[dict[str, Any]], title: str) -> None:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option(
-    "--n-shots", type=int, default=DEFAULT_N_SHOTS,
+    "--n-shots",
+    type=int,
+    default=DEFAULT_N_SHOTS,
     help=f"Number of Halfmile shots to evaluate (default: {DEFAULT_N_SHOTS})",
 )
 @click.option(
-    "--output", type=str, default=None,
-    help="Output JSON path. Default: "
-         f"{DEFAULT_OUTPUT_DIR}/sweep_<timestamp>.json",
+    "--output",
+    type=str,
+    default=None,
+    help=f"Output JSON path. Default: {DEFAULT_OUTPUT_DIR}/sweep_<timestamp>.json",
 )
 @click.option(
-    "--top-n", type=int, default=20,
+    "--top-n",
+    type=int,
+    default=20,
     help="How many top configs to show in the ranked table (default: 20)",
 )
 def main(n_shots: int, output: str | None, top_n: int) -> None:
@@ -242,8 +248,9 @@ def main(n_shots: int, output: str | None, top_n: int) -> None:
     t0 = time.time()
     shots = load_shots(n_shots)
     total_traces = sum(s[0].shape[0] for s in shots)
-    print(f"  Loaded {len(shots)} shots, {total_traces} traces "
-          f"in {time.time() - t0:.1f}s")
+    print(
+        f"  Loaded {len(shots)} shots, {total_traces} traces in {time.time() - t0:.1f}s"
+    )
 
     # ---- Run sweep ----
     print(f"\nRunning {n_configs} configs...")
@@ -254,8 +261,7 @@ def main(n_shots: int, output: str | None, top_n: int) -> None:
             print(f"  [{i:>3}/{n_configs}] sta={sta}, lta={lta}, thr={thr}")
         results.append(evaluate_config(sta, lta, thr, shots))
     elapsed = time.time() - t0
-    print(f"  Sweep complete in {elapsed:.1f}s "
-          f"({elapsed / n_configs:.2f}s per config)")
+    print(f"  Sweep complete in {elapsed:.1f}s ({elapsed / n_configs:.2f}s per config)")
 
     # ---- Sort and report ----
     ok_results = [r for r in results if r["status"] == "ok"]
@@ -300,8 +306,10 @@ def main(n_shots: int, output: str | None, top_n: int) -> None:
     print(f"  lta_window:       {winner['lta_window']}")
     print(f"  threshold:        {winner['threshold']}")
     print()
-    print(f"  Predicted picks:  {winner['predicted_picks']} / {winner['total_traces']} traces "
-          f"({100 * winner['predicted_picks'] / winner['total_traces']:.1f}%)")
+    print(
+        f"  Predicted picks:  {winner['predicted_picks']} / {winner['total_traces']} traces "
+        f"({100 * winner['predicted_picks'] / winner['total_traces']:.1f}%)"
+    )
     print(f"  Matched traces:   {winner['matched_traces']}")
     print(f"  MAE:              {winner['mae']:.2f} samples")
     print(f"  Median:           {winner['median']:.2f} samples")

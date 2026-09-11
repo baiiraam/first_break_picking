@@ -26,7 +26,6 @@ from src.baselines import STALTAPicker
 from src.training.metrics import FirstBreakMetrics
 from src.utils.hdf5_utils import load_shot_data, load_shot_indices
 
-
 # ============================================================
 # CONFIG
 # ============================================================
@@ -36,13 +35,14 @@ TARGET_TRACES = 1578
 N_SAMPLES = 751
 SAMPLING_INTERVAL_MS = 2.0
 
-N_SHOTS = 3          # how many shots to evaluate
+N_SHOTS = 3  # how many shots to evaluate
 PICKER_PARAMS = dict(sta_window=20, lta_window=100, threshold=3.0)
 
 
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     print("=" * 80)
@@ -87,7 +87,9 @@ def main() -> int:
         )
 
         # Convert ground-truth picks from ms → samples
-        shot_picks_true = np.round(shot_picks_ms / SAMPLING_INTERVAL_MS).astype(np.int64)
+        shot_picks_true = np.round(shot_picks_ms / SAMPLING_INTERVAL_MS).astype(
+            np.int64
+        )
 
         # Run the picker
         pred_picks = picker.pick(shot_data)
@@ -106,33 +108,35 @@ def main() -> int:
         # Signed errors on traces with both true and predicted picks
         both_mask = valid_gt_mask & valid_pred_mask
         if both_mask.sum() > 0:
-            signed_errors = (
-                pred_picks[both_mask] - shot_picks_true[both_mask]
-            ).astype(float)
+            signed_errors = (pred_picks[both_mask] - shot_picks_true[both_mask]).astype(
+                float
+            )
             mean_signed = float(signed_errors.mean())
             mae_shot = float(np.abs(signed_errors).mean())
-            frac_correct = float(
-                (np.abs(signed_errors) <= 3).mean()
-            )
+            frac_correct = float((np.abs(signed_errors) <= 3).mean())
         else:
             mean_signed = float("nan")
             mae_shot = float("nan")
             frac_correct = float("nan")
 
-        per_shot_results.append({
-            "shot_idx": shot_idx,
-            "shot_id": shot_id,
-            "n_traces": int(shot_data.shape[0]),
-            "n_valid_gt": n_valid_gt,
-            "n_pred": n_pred,
-            "mean_signed": mean_signed,
-            "mae_shot": mae_shot,
-            "frac_correct": frac_correct,
-        })
+        per_shot_results.append(
+            {
+                "shot_idx": shot_idx,
+                "shot_id": shot_id,
+                "n_traces": int(shot_data.shape[0]),
+                "n_valid_gt": n_valid_gt,
+                "n_pred": n_pred,
+                "mean_signed": mean_signed,
+                "mae_shot": mae_shot,
+                "frac_correct": frac_correct,
+            }
+        )
 
         print(f"  Traces:              {shot_data.shape[0]}")
         print(f"  Valid ground truth:  {n_valid_gt}")
-        print(f"  Predicted picks:     {n_pred} ({100 * n_pred / shot_data.shape[0]:.1f}%)")
+        print(
+            f"  Predicted picks:     {n_pred} ({100 * n_pred / shot_data.shape[0]:.1f}%)"
+        )
         if both_mask.sum() > 0:
             print(f"  Mean signed error:   {mean_signed:+.2f} samples")
             print(f"  MAE (this shot):     {mae_shot:.2f} samples")
@@ -148,14 +152,12 @@ def main() -> int:
 
     metrics = fb_metrics.compute()
 
-    print(f"  Total traces evaluated (with valid GT + pred): "
-          f"{metrics['total_traces']}")
+    print(f"  Total traces evaluated (with valid GT + pred): {metrics['total_traces']}")
     print(f"  Mean absolute error:   {metrics['mean_absolute_error']:.2f} samples")
     print(f"  Median absolute error: {metrics['median_absolute_error']:.2f} samples")
     print(f"  Std absolute error:    {metrics['std_absolute_error']:.2f} samples")
     print(f"  Max absolute error:    {metrics['max_absolute_error']:.2f} samples")
-    print(f"  Within ±3 samples:     "
-          f"{100 * metrics['accuracy_within_tolerance']:.1f}%")
+    print(f"  Within ±3 samples:     {100 * metrics['accuracy_within_tolerance']:.1f}%")
 
     # ---- Interpretation ----
     print()

@@ -26,7 +26,6 @@ from src.utils.logger import setup_logger
 from src.utils.mlflow_utils import MLflowManager, get_mlflow_manager
 from src.utils.tracking_conventions import EXPERIMENT_SWEEPS, sweep_tags
 
-
 logger = setup_logger(task_name="sweep_mlflow")
 
 
@@ -94,9 +93,9 @@ class SweepExperiment:
                     env="research",
                 )
                 # Merge user-provided tags from tracking_config
-                tags.update({
-                    k: str(v) for k, v in self.tracking_config.get("tags", {}).items()
-                })
+                tags.update(
+                    {k: str(v) for k, v in self.tracking_config.get("tags", {}).items()}
+                )
 
                 run_id = self.mlflow_manager.start_run(
                     config_dict={...},

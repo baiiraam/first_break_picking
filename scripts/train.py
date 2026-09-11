@@ -114,7 +114,7 @@ def main(
     log_level: str,
     loss: str,
     search_best: bool,
-    phase: str | None,                    # ← NEW
+    phase: str | None,  # ← NEW
     checkpoint_every: int,
     early_stopping: int,
     batch_size: int,
