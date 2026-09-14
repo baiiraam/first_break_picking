@@ -245,6 +245,7 @@ class SeismicTrainer:
         """
         self.model.train()
         total_loss = 0.0
+        n_valid_batches = 0
         seg_metrics = SegmentationMetrics(num_classes=3)
 
         pbar = tqdm(self.dataloaders["train"], desc="Training")
@@ -256,7 +257,26 @@ class SeismicTrainer:
             self.optimizer.zero_grad()
             outputs = self.model(x)
 
+            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                logger.error(
+                    f"[NaN] Model outputs contain NaN/Inf at train batch "
+                    f"{batch_idx}. Input range=[{x.min().item():.4f}, "
+                    f"{x.max().item():.4f}], "
+                    f"Input NaN count={torch.isnan(x).sum().item()}"
+                )
+                continue
+
             loss = self.criterion(outputs, y)
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                logger.error(
+                    f"[NaN] Train batch {batch_idx}: loss={loss.item()}, "
+                    f"outputs range=[{outputs.min().item():.4f}, "
+                    f"{outputs.max().item():.4f}], "
+                    f"target range=[{y.min().item()}, {y.max().item()}]"
+                )
+                continue
+
             loss.backward()
 
             if self.config.gradient_clip_value is not None:
@@ -267,16 +287,29 @@ class SeismicTrainer:
 
             self.optimizer.step()
             total_loss += loss.item()
+            n_valid_batches += 1
 
-            # Update segmentation metrics
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
 
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-        avg_loss = total_loss / len(self.dataloaders["train"])
-        metrics = seg_metrics.compute()
+        if n_valid_batches == 0:
+            logger.error(
+                f"[Train] All {len(self.dataloaders['train'])} batches "
+                f"produced NaN — model may be diverging."
+            )
+            avg_loss = float("nan")
+        else:
+            avg_loss = total_loss / n_valid_batches
+            if n_valid_batches < len(self.dataloaders["train"]):
+                logger.warning(
+                    f"[Train] {len(self.dataloaders['train']) - n_valid_batches} "
+                    f"batches skipped due to NaN. Averaging over "
+                    f"{n_valid_batches} valid batches."
+                )
 
+        metrics = seg_metrics.compute()
         return avg_loss, dict(metrics)
 
     @torch.no_grad()
@@ -284,6 +317,7 @@ class SeismicTrainer:
         """Run validation epoch."""
         self.model.eval()
         total_loss = 0.0
+        n_valid_batches = 0
         seg_metrics = SegmentationMetrics(num_classes=3)
 
         if self.device.type == "mps":
@@ -291,17 +325,50 @@ class SeismicTrainer:
 
         pbar = tqdm(self.dataloaders["val"], desc="Validation")
 
-        for x, y in pbar:
+        for batch_idx, (x, y) in enumerate(pbar):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
             outputs = self.model(x)
+
+            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                logger.error(
+                    f"[NaN] Model outputs contain NaN/Inf at val batch "
+                    f"{batch_idx}. Input range=[{x.min().item():.4f}, "
+                    f"{x.max().item():.4f}], "
+                    f"Input NaN count={torch.isnan(x).sum().item()}"
+                )
+                continue
+
             loss = self.criterion(outputs, y)
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                logger.error(
+                    f"[NaN] Val batch {batch_idx}: loss={loss.item()}, "
+                    f"outputs range=[{outputs.min().item():.4f}, "
+                    f"{outputs.max().item():.4f}], "
+                    f"target range=[{y.min().item()}, {y.max().item()}]"
+                )
+                continue
+
             total_loss += loss.item()
+            n_valid_batches += 1
 
             preds = torch.argmax(outputs, dim=1)
             seg_metrics.update(preds, y)
 
-        avg_loss = total_loss / len(self.dataloaders["val"])
-        metrics = seg_metrics.compute()
+        if n_valid_batches == 0:
+            logger.error(
+                f"[Val] All {len(self.dataloaders['val'])} batches produced NaN."
+            )
+            avg_loss = float("nan")
+        else:
+            avg_loss = total_loss / n_valid_batches
+            if n_valid_batches < len(self.dataloaders["val"]):
+                logger.warning(
+                    f"[Val] {len(self.dataloaders['val']) - n_valid_batches} "
+                    f"batches skipped due to NaN. Averaging over "
+                    f"{n_valid_batches} valid batches."
+                )
 
+        metrics = seg_metrics.compute()
         return avg_loss, dict(metrics)

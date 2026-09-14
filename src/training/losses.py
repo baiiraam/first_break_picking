@@ -174,19 +174,49 @@ class ComboLoss(nn.Module):
         return (1 - self.dice_weight) * combined_ce_focal + self.dice_weight * dice_loss
 
 
+class SafeCrossEntropyLoss(nn.Module):
+    """
+    Cross-entropy with two safety improvements over PyTorch's default:
+
+    1. Returns 0 (not NaN) when all targets are ignore_index.
+       PyTorch returns NaN in this case, which propagates through
+       loss aggregation.
+    2. Otherwise behaves identically to nn.CrossEntropyLoss.
+
+    Attributes:
+        base: the underlying nn.CrossEntropyLoss instance
+        ignore_index: the ignore index used for masking
+    """
+
+    def __init__(
+        self,
+        weight: torch.Tensor | None = None,
+        ignore_index: int = -1,
+    ):
+        super().__init__()
+        self.base = nn.CrossEntropyLoss(weight=weight, ignore_index=ignore_index)
+        self.ignore_index = ignore_index
+
+    def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # If every target is ignore_index, return zero loss
+        if (target == self.ignore_index).all():
+            return torch.zeros((), device=logits.device, requires_grad=True)
+        return self.base(logits, target)
+
+
 def create_loss_function(config) -> nn.Module:
     """Factory function to create loss function from config."""
 
     loss_type = getattr(config, "loss_function", "cross_entropy")
-    class_weights = getattr(config, "class_weights", [0.2, 0.2, 0.6])
+    class_weights = getattr(config, "class_weights", [0.1, 0.1, 0.8])
     ignore_index = getattr(
         config, "ignore_index", -1
     )  # 🆕 Get ignore_index from config
 
     if loss_type == LossType.CROSS_ENTROPY.value:
-        return nn.CrossEntropyLoss(
+        return SafeCrossEntropyLoss(
             weight=torch.tensor(class_weights),
-            ignore_index=ignore_index,  # 🆕 Pass ignore_index
+            ignore_index=ignore_index,
         )
 
     elif loss_type == LossType.FOCAL.value:
