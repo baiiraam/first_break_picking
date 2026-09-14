@@ -80,13 +80,11 @@ def verify_numeric_equivalence(
                         "max_diff": float("inf"),
                         "shape": tuple(ts_np.shape),
                         "error": f"Shape mismatch: pytorch={pytorch_np.shape}, "
-                                 f"torchscript={ts_np.shape}",
+                        f"torchscript={ts_np.shape}",
                     }
                 else:
                     max_diff = float(np.max(np.abs(ts_np - pytorch_np)))
-                    match = bool(
-                        np.allclose(ts_np, pytorch_np, rtol=rtol, atol=atol)
-                    )
+                    match = bool(np.allclose(ts_np, pytorch_np, rtol=rtol, atol=atol))
                     results["torchscript"] = {
                         "match": match,
                         "max_diff": max_diff,
@@ -119,9 +117,7 @@ def verify_numeric_equivalence(
                     str(path),
                     providers=["CPUExecutionProvider"],
                 )
-                ort_inputs = {
-                    session.get_inputs()[0].name: input_tensor.cpu().numpy()
-                }
+                ort_inputs = {session.get_inputs()[0].name: input_tensor.cpu().numpy()}
                 ort_out = session.run(None, ort_inputs)[0]
 
                 if ort_out.shape != pytorch_np.shape:
@@ -130,13 +126,11 @@ def verify_numeric_equivalence(
                         "max_diff": float("inf"),
                         "shape": tuple(ort_out.shape),
                         "error": f"Shape mismatch: pytorch={pytorch_np.shape}, "
-                                 f"onnx={ort_out.shape}",
+                        f"onnx={ort_out.shape}",
                     }
                 else:
                     max_diff = float(np.max(np.abs(ort_out - pytorch_np)))
-                    match = bool(
-                        np.allclose(ort_out, pytorch_np, rtol=rtol, atol=atol)
-                    )
+                    match = bool(np.allclose(ort_out, pytorch_np, rtol=rtol, atol=atol))
                     results["onnx"] = {
                         "match": match,
                         "max_diff": max_diff,

@@ -160,8 +160,20 @@ class MLflowManager:
         return self.run_id
 
     def log_metrics(self, metrics: dict[str, float], step: int):
-        """Log metrics to MLflow."""
-        mlflow.log_metrics(metrics, step=step)
+        """Log metrics to MLflow, skipping NaN/inf values."""
+        import math
+
+        clean = {
+            k: v
+            for k, v in metrics.items()
+            if isinstance(v, (int, float)) and math.isfinite(v)
+        }
+        if len(clean) < len(metrics):
+            # Log dropped keys for visibility
+            dropped = set(metrics) - set(clean)
+            logger.warning(f"[MLflow] Dropped non-finite metrics: {dropped}")
+        if clean:
+            mlflow.log_metrics(clean, step=step)
 
     def log_artifact(self, local_path: str, artifact_path: str | None = None):
         """Log an artifact file."""

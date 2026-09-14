@@ -33,8 +33,8 @@ from src.utils.logger import create_task_name, setup_logger
     "--output", "-o", default="visualization_results", help="Output directory for plots"
 )
 @click.option("--n_samples", "-n", default=10, help="Number of samples to visualize")
-@click.option("--device", "-d", default="mps", help="Device to use (cpu/cuda/mps)")
-def main(config: str, model: str, output: str, n_samples: int, device: str):
+@click.option("--device", "-d", default=None, help="Device to use (cpu/cuda/mps)")
+def main(config: str, model: str, output: str, n_samples: int, device: str | None):
     """Visualize model predictions on test samples."""
 
     # Load config
@@ -42,8 +42,8 @@ def main(config: str, model: str, output: str, n_samples: int, device: str):
         config_dict = yaml.safe_load(f)
 
     cfg = SeismicConfig(**config_dict)
-    cfg.device = device
-
+    if device is not None:
+        cfg.device = device
     # Setup logger with task name
     task_name = create_task_name(cfg, "visualize")
     logger = setup_logger(task_name=task_name)

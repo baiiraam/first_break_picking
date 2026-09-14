@@ -13,7 +13,6 @@ All operate on a loaded PyTorch model. No training, no gradients.
 """
 
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 
@@ -24,10 +23,10 @@ import numpy as np
 import torch
 from torch import nn
 
-
 # ============================================================
 # LAYER DISCOVERY
 # ============================================================
+
 
 def find_conv_layers(model: nn.Module) -> list[tuple[str, nn.Conv2d]]:
     """Return [(name, layer), ...] for all nn.Conv2d in the model."""
@@ -41,6 +40,7 @@ def find_conv_layers(model: nn.Module) -> list[tuple[str, nn.Conv2d]]:
 # ============================================================
 # ANALYSIS 1 — WEIGHT HISTOGRAMS
 # ============================================================
+
 
 class WeightHistogramAnalyzer:
     """Per-layer histograms of conv weights."""
@@ -112,6 +112,7 @@ class WeightHistogramAnalyzer:
 # ANALYSIS 2 — ACTIVATION STATISTICS
 # ============================================================
 
+
 class ActivationStatisticsAnalyzer:
     """Per-channel activation statistics over a set of shots."""
 
@@ -156,22 +157,23 @@ class ActivationStatisticsAnalyzer:
                 "sum": np.zeros(n_ch, dtype=np.float64),
                 "sumsq": np.zeros(n_ch, dtype=np.float64),
                 "zero_count": np.zeros(n_ch, dtype=np.float64),
-                "total_count": 0.0,   # per-channel count (same for all channels)
+                "total_count": 0.0,  # per-channel count (same for all channels)
             }
 
         handles = []
 
         def make_hook(layer_name):
             def hook(module, inp, out):
-                act = out.detach().cpu().numpy()   # (B, C, H, W)
+                act = out.detach().cpu().numpy()  # (B, C, H, W)
                 B, C, H, W = act.shape
                 per_channel_count = B * H * W
                 for c in range(C):
                     ch = act[:, c, :, :].flatten()
                     accum[layer_name]["sum"][c] += ch.sum()
-                    accum[layer_name]["sumsq"][c] += (ch ** 2).sum()
+                    accum[layer_name]["sumsq"][c] += (ch**2).sum()
                     accum[layer_name]["zero_count"][c] += (ch == 0).sum()
                 accum[layer_name]["total_count"] += per_channel_count
+
             return hook
 
         for name, layer in layers:
@@ -204,7 +206,7 @@ class ActivationStatisticsAnalyzer:
             a = accum[name]
             count = max(a["total_count"], 1.0)
             mean = a["sum"] / count
-            var = a["sumsq"] / count - mean ** 2
+            var = a["sumsq"] / count - mean**2
             std = np.sqrt(np.maximum(var, 0.0))
             dead_frac = a["zero_count"] / count
 
@@ -248,7 +250,7 @@ class ActivationStatisticsAnalyzer:
             ax.bar(x, mean, color=color, alpha=0.7, width=1.0)
             ax.set_title(
                 f"{name} — {s['n_channels']} ch, "
-                f"dead={s['overall_dead_frac']*100:.1f}%",
+                f"dead={s['overall_dead_frac'] * 100:.1f}%",
                 fontsize=9,
             )
             ax.set_xlabel("Channel", fontsize=7)
@@ -275,6 +277,7 @@ class ActivationStatisticsAnalyzer:
 # ANALYSIS 3 — FIRST-LAYER FILTER BANK
 # ============================================================
 
+
 class FirstLayerFilterAnalyzer:
     """Renders the first conv layer's kernels as a grid of images."""
 
@@ -288,7 +291,7 @@ class FirstLayerFilterAnalyzer:
             raise ValueError("No conv layers found in model")
 
         name, layer = layers[0]
-        weights = layer.weight.detach().cpu().numpy()   # (out_c, in_c, kh, kw)
+        weights = layer.weight.detach().cpu().numpy()  # (out_c, in_c, kh, kw)
         out_c, in_c, kh, kw = weights.shape
 
         cols = min(8, out_c)
@@ -317,8 +320,7 @@ class FirstLayerFilterAnalyzer:
             axes_flat[j].axis("off")
 
         fig.suptitle(
-            f"First conv layer filters — {name} ({out_c} channels, "
-            f"kernel {kh}×{kw})",
+            f"First conv layer filters — {name} ({out_c} channels, kernel {kh}×{kw})",
             fontsize=12,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
@@ -333,6 +335,7 @@ class FirstLayerFilterAnalyzer:
 # ============================================================
 # ANALYSIS 4 — KERNEL SIMILARITY
 # ============================================================
+
 
 class KernelSimilarityAnalyzer:
     """Pairwise cosine similarity between kernels in each conv layer."""
@@ -364,7 +367,7 @@ class KernelSimilarityAnalyzer:
             norms[norms == 0] = 1e-12
             unit = flat / norms
 
-            sim = unit @ unit.T   # (out_c, out_c)
+            sim = unit @ unit.T  # (out_c, out_c)
 
             mask = ~np.eye(n_out, dtype=bool)
             off_diag = sim[mask]
@@ -376,9 +379,7 @@ class KernelSimilarityAnalyzer:
                 "n_channels": int(n_out),
                 "kernel_size": tuple(layer.weight.shape[1:]),
                 "high_similarity_pairs": high,
-                "frac_high_similarity": float(
-                    high / max(n_out * (n_out - 1) / 2, 1)
-                ),
+                "frac_high_similarity": float(high / max(n_out * (n_out - 1) / 2, 1)),
                 "mean_similarity": float(off_diag.mean()),
                 "max_offdiag_similarity": float(off_diag.max()),
             }
@@ -407,9 +408,7 @@ class KernelSimilarityAnalyzer:
             unit = flat / norms
             sim = unit @ unit.T
 
-            fig, ax = plt.subplots(
-                figsize=(0.35 * n_out + 2, 0.35 * n_out + 2)
-            )
+            fig, ax = plt.subplots(figsize=(0.35 * n_out + 2, 0.35 * n_out + 2))
             im = ax.imshow(sim, cmap="viridis", vmin=-1, vmax=1)
             ax.set_title(
                 f"Kernel similarity — {name} ({n_out} channels)",

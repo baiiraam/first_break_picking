@@ -162,6 +162,7 @@ def sweep_tags(
     )
     return base
 
+
 def comparison_tags(
     dataset: str,
     ml_model: str,
@@ -177,17 +178,24 @@ def comparison_tags(
     sta_config: human-readable identifier for the STA/LTA config
         (e.g., "sta15_lta150_thr3.0").
     """
-    base = _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: "ML_vs_STALTA",
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
-    base.update(_clean({
-        "ml_model": ml_model,
-        "sta_config": sta_config,
-    }))
+    base = _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: "ML_vs_STALTA",
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
+    base.update(
+        _clean(
+            {
+                "ml_model": ml_model,
+                "sta_config": sta_config,
+            }
+        )
+    )
     return base
+
 
 def explainability_tags(
     dataset: str,
@@ -199,11 +207,13 @@ def explainability_tags(
     """
     Canonical tags for an explainability run.
     """
-    base = _clean({
-        TAG_DATASET: dataset,
-        TAG_MODEL_TYPE: model_type,
-        TAG_PHASE: phase,
-        TAG_ENV: env,
-    })
+    base = _clean(
+        {
+            TAG_DATASET: dataset,
+            TAG_MODEL_TYPE: model_type,
+            TAG_PHASE: phase,
+            TAG_ENV: env,
+        }
+    )
     base.update(_clean({"split": split}))
     return base

@@ -25,7 +25,6 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import click
 import numpy as np
@@ -49,10 +48,10 @@ from src.utils.tracking_conventions import (
     explainability_tags,
 )
 
-
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def build_per_trace_df(
     model: torch.nn.Module,
@@ -75,8 +74,8 @@ def build_per_trace_df(
             x, y = dataset[i]  # x: (1, H, W), y: (H, W)
             shot_id = int(dataset.get_shot_id(i))
 
-            shot_data = x.squeeze(0).cpu().numpy()   # (H, W)
-            gt_mask = y.cpu().numpy()                # (H, W)
+            shot_data = x.squeeze(0).cpu().numpy()  # (H, W)
+            gt_mask = y.cpu().numpy()  # (H, W)
             shots[shot_id] = shot_data
 
             # ML prediction
@@ -95,15 +94,17 @@ def build_per_trace_df(
                     continue
                 ml = int(ml_picks[t])
                 sta = int(sta_picks[t])
-                rows.append({
-                    "shot_id": shot_id,
-                    "trace_index": t,
-                    "gt_pick_sample": gt,
-                    "sta_lta_pick": sta,
-                    "sta_lta_error_samples": abs(sta - gt) if sta > 0 else -1,
-                    "ml_pick": ml,
-                    "ml_error_samples": abs(ml - gt) if ml > 0 else -1,
-                })
+                rows.append(
+                    {
+                        "shot_id": shot_id,
+                        "trace_index": t,
+                        "gt_pick_sample": gt,
+                        "sta_lta_pick": sta,
+                        "sta_lta_error_samples": abs(sta - gt) if sta > 0 else -1,
+                        "ml_pick": ml,
+                        "ml_error_samples": abs(ml - gt) if ml > 0 else -1,
+                    }
+                )
 
     df = pd.DataFrame(rows)
     logger.info(
@@ -122,9 +123,7 @@ def select_representative_shots(
     df = metrics.copy()
     df = df[np.isfinite(df["ml_coherence"])]
     if len(df) < 3:
-        raise ValueError(
-            f"Need at least 3 shots with finite coherence, got {len(df)}"
-        )
+        raise ValueError(f"Need at least 3 shots with finite coherence, got {len(df)}")
     df = df.sort_values("ml_coherence")
     n = len(df)
     return [
@@ -143,16 +142,19 @@ def build_run_name(dataset: str, phase: str) -> str:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option("--config", "-c", required=True, help="Config YAML path")
 @click.option("--model", "-m", required=True, help="ML model checkpoint")
-@click.option("--split", "-s", default="test",
-              type=click.Choice(["train", "val", "test"]))
+@click.option(
+    "--split", "-s", default="test", type=click.Choice(["train", "val", "test"])
+)
 @click.option("--sta-window", type=int, default=15)
 @click.option("--lta-window", type=int, default=150)
 @click.option("--threshold", type=float, default=3.0)
-@click.option("--n-worst", type=int, default=20,
-              help="How many traces in each worst-N gallery")
+@click.option(
+    "--n-worst", type=int, default=20, help="How many traces in each worst-N gallery"
+)
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--phase", type=str, default="diagnose-v1.0")
 def main(
@@ -180,7 +182,9 @@ def main(
     logger.info(f"  Dataset:        {cfg.dataset_name}")
     logger.info(f"  Model:          {model}")
     logger.info(f"  Split:          {split}")
-    logger.info(f"  STA/LTA:        sta={sta_window}, lta={lta_window}, thr={threshold}")
+    logger.info(
+        f"  STA/LTA:        sta={sta_window}, lta={lta_window}, thr={threshold}"
+    )
     logger.info(f"  N worst:        {n_worst}")
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -227,9 +231,7 @@ def main(
 
     # Output directory
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    output_dir = Path("evaluation_results") / (
-        f"diagnostics_{cfg.dataset_name}_{ts}"
-    )
+    output_dir = Path("evaluation_results") / (f"diagnostics_{cfg.dataset_name}_{ts}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Coherence
@@ -305,22 +307,16 @@ def main(
     }
 
     # Summary metrics
-    ml_coh = metrics_df["ml_coherence"].replace(
-        [np.inf, -np.inf], np.nan
-    ).dropna()
-    gt_coh = metrics_df["gt_coherence"].replace(
-        [np.inf, -np.inf], np.nan
-    ).dropna()
-    sta_coh = metrics_df["sta_coherence"].replace(
-        [np.inf, -np.inf], np.nan
-    ).dropna()
+    ml_coh = metrics_df["ml_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
+    gt_coh = metrics_df["gt_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
+    sta_coh = metrics_df["sta_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
 
     ml_metrics = {
         "coherence_ml_median": float(ml_coh.median()) if len(ml_coh) else 0.0,
         "coherence_gt_median": float(gt_coh.median()) if len(gt_coh) else 0.0,
         "coherence_sta_median": float(sta_coh.median()) if len(sta_coh) else 0.0,
-        "n_shots": int(len(metrics_df)),
-        "n_traces": int(len(per_trace)),
+        "n_shots": len(metrics_df),
+        "n_traces": len(per_trace),
     }
 
     mlflow_manager.start_run(

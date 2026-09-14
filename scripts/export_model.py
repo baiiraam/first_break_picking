@@ -185,9 +185,7 @@ def main(
             if res.get("error"):
                 logger.info(f"  {status} {backend}: {res['error']}")
             else:
-                logger.info(
-                    f"  {status} {backend}: max_diff={res['max_diff']:.2e}"
-                )
+                logger.info(f"  {status} {backend}: max_diff={res['max_diff']:.2e}")
 
     # --- Summary ---
     logger.info("")
@@ -204,9 +202,7 @@ def main(
     logger.info("")
     logger.info("To use the exported model:")
     if ts_path:
-        logger.info(
-            f"  TorchScript: torch.jit.load('{ts_path}')"
-        )
+        logger.info(f"  TorchScript: torch.jit.load('{ts_path}')")
     if onnx_path:
         logger.info(
             f"  ONNX: import onnxruntime as ort; "

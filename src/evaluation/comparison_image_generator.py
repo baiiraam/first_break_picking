@@ -31,14 +31,15 @@ import pandas as pd
 # COLORS
 # ============================================================
 
-COLOR_STA = "#d62728"   # red
-COLOR_ML = "#1f77b4"    # blue
-COLOR_GT = "#2ca02c"    # green
+COLOR_STA = "#d62728"  # red
+COLOR_ML = "#1f77b4"  # blue
+COLOR_GT = "#2ca02c"  # green
 
 
 # ============================================================
 # GENERATOR
 # ============================================================
+
 
 class ComparisonImageGenerator:
     """
@@ -114,9 +115,7 @@ class ComparisonImageGenerator:
             if p is not None:
                 paths.append(p)
 
-        self.logger.info(
-            f"[CompareImageGen] Generated {len(paths)} images"
-        )
+        self.logger.info(f"[CompareImageGen] Generated {len(paths)} images")
         return paths
 
     # ---------------------------------------------------------------
@@ -175,8 +174,11 @@ class ComparisonImageGenerator:
         if v == 0:
             v = 1.0
         ax.imshow(
-            shot_data.T, cmap="seismic", aspect="auto",
-            vmin=-v, vmax=v,
+            shot_data.T,
+            cmap="seismic",
+            aspect="auto",
+            vmin=-v,
+            vmax=v,
             extent=(0, shot_data.shape[0], shot_data.shape[1], 0),
         )
         ax.set_title(f"Seismogram — shot {shot_id}")
@@ -186,7 +188,9 @@ class ComparisonImageGenerator:
         # Panel 2 — picks overlay
         ax = axes[1]
         ax.imshow(
-            shot_data.T, cmap="gray", aspect="auto",
+            shot_data.T,
+            cmap="gray",
+            aspect="auto",
             extent=(0, shot_data.shape[0], shot_data.shape[1], 0),
             alpha=0.5,
         )
@@ -196,19 +200,31 @@ class ComparisonImageGenerator:
         ml_mask = ml_at > 0
 
         ax.scatter(
-            trace_idx[gt_mask], gt_at[gt_mask],
-            marker="o", s=10, color=COLOR_GT,
-            label="Ground truth", alpha=0.8,
+            trace_idx[gt_mask],
+            gt_at[gt_mask],
+            marker="o",
+            s=10,
+            color=COLOR_GT,
+            label="Ground truth",
+            alpha=0.8,
         )
         ax.scatter(
-            trace_idx[sta_mask], sta_at[sta_mask],
-            marker="x", s=30, color=COLOR_STA,
-            label="STA/LTA", alpha=0.9,
+            trace_idx[sta_mask],
+            sta_at[sta_mask],
+            marker="x",
+            s=30,
+            color=COLOR_STA,
+            label="STA/LTA",
+            alpha=0.9,
         )
         ax.scatter(
-            trace_idx[ml_mask], ml_at[ml_mask],
-            marker="+", s=40, color=COLOR_ML,
-            label="ML model", alpha=0.9,
+            trace_idx[ml_mask],
+            ml_at[ml_mask],
+            marker="+",
+            s=40,
+            color=COLOR_ML,
+            label="ML model",
+            alpha=0.9,
         )
         ax.set_title(
             f"Picks: GT (green o), STA/LTA (red x), ML (blue +) — shot {shot_id}"
@@ -224,12 +240,20 @@ class ComparisonImageGenerator:
         both = np.arange(len(trace_idx))
         width = 0.4
         ax.bar(
-            both - width / 2, np.clip(sta_err, 0.5, None), width,
-            color=COLOR_STA, alpha=0.75, label="STA/LTA error",
+            both - width / 2,
+            np.clip(sta_err, 0.5, None),
+            width,
+            color=COLOR_STA,
+            alpha=0.75,
+            label="STA/LTA error",
         )
         ax.bar(
-            both + width / 2, np.clip(ml_err, 0.5, None), width,
-            color=COLOR_ML, alpha=0.75, label="ML error",
+            both + width / 2,
+            np.clip(ml_err, 0.5, None),
+            width,
+            color=COLOR_ML,
+            alpha=0.75,
+            label="ML error",
         )
         ax.set_yscale("log")
         ax.set_title("Per-trace absolute error (log scale)")
@@ -279,16 +303,22 @@ class ComparisonImageGenerator:
         bins = np.linspace(0, upper, 50)
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(sta, bins=bins, color=COLOR_STA, alpha=0.5,
-                label="STA/LTA", edgecolor="black")
-        ax.hist(ml, bins=bins, color=COLOR_ML, alpha=0.5,
-                label="ML", edgecolor="black")
+        ax.hist(
+            sta,
+            bins=bins,
+            color=COLOR_STA,
+            alpha=0.5,
+            label="STA/LTA",
+            edgecolor="black",
+        )
+        ax.hist(ml, bins=bins, color=COLOR_ML, alpha=0.5, label="ML", edgecolor="black")
         ax.set_yscale("log")
         ax.set_xlabel("Absolute error (samples)")
         ax.set_ylabel("Count (log scale)")
         ax.set_title("Per-trace error distribution — ML vs STA/LTA")
-        ax.axvline(3.0, color="black", linestyle="--", linewidth=1.5,
-                   label="±3 tolerance")
+        ax.axvline(
+            3.0, color="black", linestyle="--", linewidth=1.5, label="±3 tolerance"
+        )
 
         sta_mae = float(sta.mean()) if len(sta) > 0 else 0.0
         ml_mae = float(ml.mean()) if len(ml) > 0 else 0.0
@@ -304,7 +334,9 @@ class ComparisonImageGenerator:
             f"±3 acc:      {sta_pct:>9.1f}%{ml_pct:>9.1f}%"
         )
         ax.text(
-            0.97, 0.97, text,
+            0.97,
+            0.97,
+            text,
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment="top",
@@ -336,14 +368,22 @@ class ComparisonImageGenerator:
         fig, ax = plt.subplots(figsize=(10, 6))
         if sta_valid.any():
             ax.scatter(
-                gt_pos[sta_valid], np.clip(sta_err[sta_valid], 1, None),
-                s=2, alpha=0.15, color=COLOR_STA, rasterized=True,
+                gt_pos[sta_valid],
+                np.clip(sta_err[sta_valid], 1, None),
+                s=2,
+                alpha=0.15,
+                color=COLOR_STA,
+                rasterized=True,
                 label="STA/LTA",
             )
         if ml_valid.any():
             ax.scatter(
-                gt_pos[ml_valid], np.clip(ml_err[ml_valid], 1, None),
-                s=2, alpha=0.15, color=COLOR_ML, rasterized=True,
+                gt_pos[ml_valid],
+                np.clip(ml_err[ml_valid], 1, None),
+                s=2,
+                alpha=0.15,
+                color=COLOR_ML,
+                rasterized=True,
                 label="ML",
             )
         ax.set_yscale("log")
@@ -385,12 +425,17 @@ class ComparisonImageGenerator:
         width = 0.35
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        bars_sta = ax.bar(x - width / 2, sta_vals, width,
-                          color=COLOR_STA, label="STA/LTA",
-                          edgecolor="black")
-        bars_ml = ax.bar(x + width / 2, ml_vals, width,
-                         color=COLOR_ML, label="ML",
-                         edgecolor="black")
+        bars_sta = ax.bar(
+            x - width / 2,
+            sta_vals,
+            width,
+            color=COLOR_STA,
+            label="STA/LTA",
+            edgecolor="black",
+        )
+        bars_ml = ax.bar(
+            x + width / 2, ml_vals, width, color=COLOR_ML, label="ML", edgecolor="black"
+        )
 
         # Annotate bar heights
         for bars in (bars_sta, bars_ml):
@@ -401,7 +446,9 @@ class ComparisonImageGenerator:
                     xy=(bar.get_x() + bar.get_width() / 2, h),
                     xytext=(0, 3),
                     textcoords="offset points",
-                    ha="center", va="bottom", fontsize=9,
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
                 )
 
         ax.set_xticks(x)

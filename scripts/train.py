@@ -79,24 +79,24 @@ from src.utils.logger import create_task_name, setup_logger
     "--loss",
     "-l",
     type=click.Choice(["cross_entropy", "focal", "dice", "combo"]),
-    default="cross_entropy",
+    default=None,
     help="Loss function to use",
 )
 @click.option(
-    "--dice-weight", type=float, default=0.5, help="Dice weight for combo loss"
+    "--dice-weight", type=float, default=None, help="Dice weight for combo loss"
 )
 @click.option(
-    "--focal-gamma", type=float, default=2.0, help="Focal gamma for focal/combo loss"
+    "--focal-gamma", type=float, default=None, help="Focal gamma for focal/combo loss"
 )
 @click.option(
     "--checkpoint-every",
     "-ce",
     type=int,
-    default=5,
+    default=None,
     help="Save checkpoint every N epochs",
 )
 @click.option(
-    "--early-stopping", "-es", type=int, default=5, help="Early stopping patience"
+    "--early-stopping", "-es", type=int, default=None, help="Early stopping patience"
 )
 @click.option("--batch-size", "-b", type=int, help="Override batch size")
 @click.option("--cache-size", type=int, help="Override cache size")
@@ -112,18 +112,18 @@ def main(
     verbose: bool,
     log_memory: bool,
     log_level: str,
-    loss: str,
+    loss: str | None,
     search_best: bool,
     phase: str | None,  # ← NEW
-    checkpoint_every: int,
-    early_stopping: int,
+    checkpoint_every: int | None,
+    early_stopping: int | None,
     batch_size: int,
     cache_size: int,
     lr_scheduler: str,
     learning_rate: float,
     num_workers: int,
-    dice_weight: float,
-    focal_gamma: float,
+    dice_weight: float | None,
+    focal_gamma: float | None,
 ):
     """Run the training pipeline."""
 

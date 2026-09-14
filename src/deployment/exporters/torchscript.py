@@ -41,9 +41,7 @@ def export_torchscript(
     if example_input is None:
         example_input = torch.randn(*contract.expected_shape)
         if logger:
-            logger.info(
-                f"  Created example input: {tuple(example_input.shape)}"
-            )
+            logger.info(f"  Created example input: {tuple(example_input.shape)}")
 
     # Move to model's device (usually CPU for export)
     device = next(model.parameters()).device

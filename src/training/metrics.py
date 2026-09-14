@@ -245,8 +245,8 @@ def extract_picks_from_mask(mask: np.ndarray) -> np.ndarray:
     """
     n_traces, n_samples = mask.shape
 
-    strip_mask = (mask == 2)
-    after_mask = (mask == 1)
+    strip_mask = mask == 2
+    after_mask = mask == 1
 
     has_strip = strip_mask.any(axis=1)
 

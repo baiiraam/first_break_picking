@@ -21,20 +21,15 @@ class LossType(Enum):
 
 
 class FocalLoss(nn.Module):
-    """Focal Loss for imbalanced classes with ignore_index support."""
-
-    def __init__(
-        self,
-        alpha: list[float] | None = None,
-        gamma: float = 2.0,
-        reduction: str = "mean",
-        ignore_index: int = -1,  # 🆕 Add this
-    ):
+    def __init__(self, alpha=None, gamma=2.0, reduction="mean", ignore_index=-1):
         super().__init__()
-        self.alpha = torch.tensor(alpha) if alpha is not None else None
+        if alpha is not None:
+            self.register_buffer("alpha", torch.tensor(alpha, dtype=torch.float32))
+        else:
+            self.alpha = None
         self.gamma = gamma
         self.reduction = reduction
-        self.ignore_index = ignore_index  # 🆕 Store it
+        self.ignore_index = ignore_index
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # 🆕 Create mask for valid pixels
@@ -114,22 +109,24 @@ class DiceLoss(nn.Module):
 
 
 class ComboLoss(nn.Module):
-    """Combined loss: CE + Focal + Dice with ignore_index support."""
-
     def __init__(
         self,
-        class_weights: list[float] | None = None,
-        dice_weight: float = 0.5,
-        focal_gamma: float = 2.0,
-        ignore_index: int = -1,  # 🆕 Add this
+        class_weights=None,
+        dice_weight=0.5,
+        focal_gamma=2.0,
+        ignore_index=-1,
     ):
         super().__init__()
-        self.class_weights = (
-            torch.tensor(class_weights) if class_weights is not None else None
-        )
+        if class_weights is not None:
+            self.register_buffer(
+                "class_weights",
+                torch.tensor(class_weights, dtype=torch.float32),
+            )
+        else:
+            self.class_weights = None
         self.dice_weight = dice_weight
         self.focal_gamma = focal_gamma
-        self.ignore_index = ignore_index  # 🆕 Store it
+        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         # 🆕 Create mask for valid pixels
@@ -174,19 +171,49 @@ class ComboLoss(nn.Module):
         return (1 - self.dice_weight) * combined_ce_focal + self.dice_weight * dice_loss
 
 
+class SafeCrossEntropyLoss(nn.Module):
+    """
+    Cross-entropy with two safety improvements over PyTorch's default:
+
+    1. Returns 0 (not NaN) when all targets are ignore_index.
+       PyTorch returns NaN in this case, which propagates through
+       loss aggregation.
+    2. Otherwise behaves identically to nn.CrossEntropyLoss.
+
+    Attributes:
+        base: the underlying nn.CrossEntropyLoss instance
+        ignore_index: the ignore index used for masking
+    """
+
+    def __init__(
+        self,
+        weight: torch.Tensor | None = None,
+        ignore_index: int = -1,
+    ):
+        super().__init__()
+        self.base = nn.CrossEntropyLoss(weight=weight, ignore_index=ignore_index)
+        self.ignore_index = ignore_index
+
+    def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # If every target is ignore_index, return zero loss
+        if (target == self.ignore_index).all():
+            return torch.zeros((), device=logits.device, requires_grad=True)
+        return self.base(logits, target)
+
+
 def create_loss_function(config) -> nn.Module:
     """Factory function to create loss function from config."""
 
     loss_type = getattr(config, "loss_function", "cross_entropy")
-    class_weights = getattr(config, "class_weights", [0.2, 0.2, 0.6])
+    class_weights = getattr(config, "class_weights", [0.1, 0.1, 0.8])
     ignore_index = getattr(
         config, "ignore_index", -1
     )  # 🆕 Get ignore_index from config
 
     if loss_type == LossType.CROSS_ENTROPY.value:
-        return nn.CrossEntropyLoss(
+        return SafeCrossEntropyLoss(
             weight=torch.tensor(class_weights),
-            ignore_index=ignore_index,  # 🆕 Pass ignore_index
+            ignore_index=ignore_index,
         )
 
     elif loss_type == LossType.FOCAL.value:

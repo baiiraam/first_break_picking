@@ -54,7 +54,8 @@ def find_latest_images_dir(base: Path) -> Path | None:
     if not base.exists():
         return None
     candidates = [
-        p for p in base.iterdir()
+        p
+        for p in base.iterdir()
         if p.is_dir() and p.name.startswith("comparison_images_")
     ]
     if not candidates:
@@ -89,6 +90,7 @@ def check_image(path: Path) -> tuple[bool, str]:
         return False, f"too small ({size} bytes)"
     try:
         from PIL import Image
+
         Image.open(path).verify()
     except ImportError:
         return True, f"OK ({size} bytes, no PIL)"
@@ -140,9 +142,11 @@ def check_mlflow() -> bool:
     print(f"    phase: {run.data.tags.get('phase', 'N/A')}")
     metrics = run.data.metrics
     interesting = [
-        "ml_mae_samples", "sta_lta_mae_samples",
+        "ml_mae_samples",
+        "sta_lta_mae_samples",
         "ml_minus_sta_lta_mae",
-        "ml_within_3_accuracy", "sta_lta_within_3_accuracy",
+        "ml_within_3_accuracy",
+        "sta_lta_within_3_accuracy",
     ]
     for k in interesting:
         if k in metrics:
