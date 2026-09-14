@@ -21,20 +21,15 @@ class LossType(Enum):
 
 
 class FocalLoss(nn.Module):
-    """Focal Loss for imbalanced classes with ignore_index support."""
-
-    def __init__(
-        self,
-        alpha: list[float] | None = None,
-        gamma: float = 2.0,
-        reduction: str = "mean",
-        ignore_index: int = -1,  # 🆕 Add this
-    ):
+    def __init__(self, alpha=None, gamma=2.0, reduction="mean", ignore_index=-1):
         super().__init__()
-        self.alpha = torch.tensor(alpha) if alpha is not None else None
+        if alpha is not None:
+            self.register_buffer("alpha", torch.tensor(alpha, dtype=torch.float32))
+        else:
+            self.alpha = None
         self.gamma = gamma
         self.reduction = reduction
-        self.ignore_index = ignore_index  # 🆕 Store it
+        self.ignore_index = ignore_index
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # 🆕 Create mask for valid pixels
@@ -114,22 +109,24 @@ class DiceLoss(nn.Module):
 
 
 class ComboLoss(nn.Module):
-    """Combined loss: CE + Focal + Dice with ignore_index support."""
-
     def __init__(
         self,
-        class_weights: list[float] | None = None,
-        dice_weight: float = 0.5,
-        focal_gamma: float = 2.0,
-        ignore_index: int = -1,  # 🆕 Add this
+        class_weights=None,
+        dice_weight=0.5,
+        focal_gamma=2.0,
+        ignore_index=-1,
     ):
         super().__init__()
-        self.class_weights = (
-            torch.tensor(class_weights) if class_weights is not None else None
-        )
+        if class_weights is not None:
+            self.register_buffer(
+                "class_weights",
+                torch.tensor(class_weights, dtype=torch.float32),
+            )
+        else:
+            self.class_weights = None
         self.dice_weight = dice_weight
         self.focal_gamma = focal_gamma
-        self.ignore_index = ignore_index  # 🆕 Store it
+        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         # 🆕 Create mask for valid pixels
