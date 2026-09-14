@@ -1,3 +1,5 @@
+# REMEMBER TO CHANGE THE PLACEHOLDERS!
+
 # 1. Preprocess
 python scripts/preprocess.py \
     --config configs/{dataset}.yaml
