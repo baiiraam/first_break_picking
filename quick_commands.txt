@@ -1,0 +1,52 @@
+# 1. Preprocess
+python scripts/preprocess.py \
+    --config configs/{dataset}.yaml
+
+# 2. Train (In mac, for full training, prevent desktop becoming idle, so that the process does not hang)
+caffeinate -i nohup python scripts/train.py \
+    --config configs/{dataset}.yaml
+    --model {model} \
+    --epochs {epoch_number} \
+    --phase {phase}-{dataset}-{model}-{training} \
+    --log-memory \
+    > logs/{log_file_name}.log 2>&1 &
+
+# 3. Evaluate
+python scripts/evaluate.py \
+    --config configs/{dataset}.yaml \
+    --model models/registry/{model}.pt \
+    --split {train | val | test | all } --detailed --save-images \
+    --phase baseline-v1.0-{dataset}-{model}
+
+# 4. Visualize
+python scripts/visualize.py \
+    --config configs/{dataset}.yaml \
+    --model models/registry/{model}.pt \
+    --n_samples 30
+
+# 5. Compare with STA/LTA
+python scripts/compare_baselines.py \
+    --config configs/{dataset}.yaml \
+    --ml-model models/registry/{model}.pt \
+    --shots 5 \
+    --phase baseline-comparison-v1.0-{dataset}-{model}
+
+# 6. Diagnose
+python scripts/diagnose.py \
+    --config configs/{dataset}.yaml \
+    --model models/registry/{model}.pt \
+    --split {train | val | test | all } --n-worst 20 \
+    --phase diagnose-v1.0-{dataset}-{model}
+
+# 7. Explain
+python scripts/explain.py \
+    --config configs/{dataset}.yaml \
+    --model models/registry/{model}.pt \
+    --split {train | val | test | all } \
+    --phase explain-v1.0-{dataset}-{model}
+
+# 8. Feature analysis
+python scripts/analyze_features.py \
+    --checkpoint models/registry/{model}.pt \
+    --config configs/{dataset}.yaml \
+    --phase feature-analysis-v1.0-{dataset}-{model}
