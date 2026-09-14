@@ -19,16 +19,16 @@ from src.explainability.image_generator import ExplainabilityImageGenerator
 from src.explainability.runner import ExplainabilityRunner
 
 __all__ = [
-    "Explainer",
-    "find_last_conv_layer",
-    "find_conv_layers",
-    "GradCAM",
-    "ExplainabilityImageGenerator",
-    "ExplainabilityRunner",
+    "ActivationStatisticsAnalyzer",
     "CoherenceAnalyzer",
     "ErrorGalleryGenerator",
-    "WeightHistogramAnalyzer",
-    "ActivationStatisticsAnalyzer",
+    "ExplainabilityImageGenerator",
+    "ExplainabilityRunner",
+    "Explainer",
     "FirstLayerFilterAnalyzer",
+    "GradCAM",
     "KernelSimilarityAnalyzer",
+    "WeightHistogramAnalyzer",
+    "find_conv_layers",
+    "find_last_conv_layer",
 ]

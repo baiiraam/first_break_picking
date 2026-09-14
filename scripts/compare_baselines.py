@@ -46,6 +46,7 @@ from src.utils.tracking_conventions import (
 # HELPERS
 # ============================================================
 
+
 def select_shot_indices(
     n_total: int,
     n_shots: int,
@@ -75,12 +76,15 @@ def load_shots(
         start = int(start_indices[idx])
         end = int(end_indices[idx])
         shot_data, gt_picks_ms = load_shot_data(
-            cfg.hdf5_path, start, end,
-            cfg.target_traces, cfg.n_samples,
+            cfg.hdf5_path,
+            start,
+            end,
+            cfg.target_traces,
+            cfg.n_samples,
         )
-        gt_picks_samples = np.round(
-            gt_picks_ms / cfg.sampling_interval_ms
-        ).astype(np.int64)
+        gt_picks_samples = np.round(gt_picks_ms / cfg.sampling_interval_ms).astype(
+            np.int64
+        )
         shots.append((shot_id, shot_data, gt_picks_samples))
     return shots
 
@@ -98,12 +102,11 @@ def make_sta_config_label(sta_window: int, lta_window: int, threshold: float) ->
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option("--config", "-c", required=True, help="Config YAML path")
-@click.option("--ml-model", "-m", required=True,
-              help="Path to ML model checkpoint")
-@click.option("--dataset", "-ds", default=None,
-              help="Override dataset name")
+@click.option("--ml-model", "-m", required=True, help="Path to ML model checkpoint")
+@click.option("--dataset", "-ds", default=None, help="Override dataset name")
 @click.option("--sta-window", type=int, default=15)
 @click.option("--lta-window", type=int, default=150)
 @click.option("--threshold", type=float, default=3.0)
@@ -111,12 +114,21 @@ def make_sta_config_label(sta_window: int, lta_window: int, threshold: float) ->
 @click.option("--seed", type=int, default=None)
 @click.option("--shots-from", type=int, default=None)
 @click.option("--shots-to", type=int, default=None)
-@click.option("--save-images", is_flag=True, default=True,
-              help="Generate and log the 6 comparison images (default: on)")
-@click.option("--no-images", is_flag=True, default=False,
-              help="Disable image generation")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Compute and print, do not log to MLflow")
+@click.option(
+    "--save-images",
+    is_flag=True,
+    default=True,
+    help="Generate and log the 6 comparison images (default: on)",
+)
+@click.option(
+    "--no-images", is_flag=True, default=False, help="Disable image generation"
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Compute and print, do not log to MLflow",
+)
 @click.option("--phase", type=str, default="baseline-comparison-v1.0")
 def main(
     config: str,
@@ -152,7 +164,9 @@ def main(
     logger.info("=" * 70)
     logger.info(f"  Dataset:        {cfg.dataset_name}")
     logger.info(f"  ML model:       {ml_model}")
-    logger.info(f"  STA/LTA:        sta={sta_window}, lta={lta_window}, thr={threshold}")
+    logger.info(
+        f"  STA/LTA:        sta={sta_window}, lta={lta_window}, thr={threshold}"
+    )
     logger.info(f"  Shots:          {shots}")
     logger.info(f"  Seed:           {seed}")
     logger.info(f"  Shots range:    {shots_from}..{shots_to}")
@@ -220,8 +234,8 @@ def main(
         f"{m['median_absolute_error']:>9.2f} │"
     )
     logger.info(
-        f"  │ ±3 accuracy     │ {s['accuracy_within_tolerance']*100:>8.1f}% │ "
-        f"{m['accuracy_within_tolerance']*100:>8.1f}% │"
+        f"  │ ±3 accuracy     │ {s['accuracy_within_tolerance'] * 100:>8.1f}% │ "
+        f"{m['accuracy_within_tolerance'] * 100:>8.1f}% │"
     )
     logger.info("  └─────────────────┴───────────┴───────────┘")
 

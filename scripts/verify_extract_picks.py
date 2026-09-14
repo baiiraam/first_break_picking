@@ -27,6 +27,7 @@ N_SAMPLES = 751
 # HELPERS
 # ============================================================
 
+
 def make_mask_with_strip(strip_start: int, strip_end: int, n_samples=N_SAMPLES):
     """
     Build a mask with:
@@ -36,8 +37,8 @@ def make_mask_with_strip(strip_start: int, strip_end: int, n_samples=N_SAMPLES):
     Returns (1, n_samples) int64.
     """
     mask = np.zeros((1, n_samples), dtype=np.int64)
-    mask[0, strip_start:strip_end + 1] = 2
-    mask[0, strip_end + 1:] = 1
+    mask[0, strip_start : strip_end + 1] = 2
+    mask[0, strip_end + 1 :] = 1
     return mask
 
 
@@ -54,6 +55,7 @@ def make_mask_without_strip(first_after: int, n_samples=N_SAMPLES):
 # ============================================================
 # TESTS
 # ============================================================
+
 
 def test_clean_strip():
     print()
@@ -124,8 +126,8 @@ def test_multiple_traces():
     for i, center in enumerate(expected_centers):
         start = center - 4
         end = center + 4
-        mask[i, start:end + 1] = 2
-        mask[i, end + 1:] = 1
+        mask[i, start : end + 1] = 2
+        mask[i, end + 1 :] = 1
 
     picks = extract_picks_from_mask(mask)
     ok = True
@@ -134,8 +136,7 @@ def test_multiple_traces():
         match = got == expected
         if not match:
             ok = False
-        print(f"  trace {i}: expected {expected}, got {got} "
-              f"{'✅' if match else '❌'}")
+        print(f"  trace {i}: expected {expected}, got {got} {'✅' if match else '❌'}")
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     return ok
 
@@ -166,6 +167,7 @@ def test_dtype_shape():
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     print("=" * 80)

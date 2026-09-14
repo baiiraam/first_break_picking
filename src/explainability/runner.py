@@ -68,12 +68,9 @@ class ExplainabilityRunner:
         Returns:
             List of paths to generated figures.
         """
-        if not (
-            len(shot_ids) == len(shots) == len(labels) == len(mean_errors)
-        ):
+        if not (len(shot_ids) == len(shots) == len(labels) == len(mean_errors)):
             raise ValueError(
-                "shot_ids, shots, labels, and mean_errors must have "
-                "the same length"
+                "shot_ids, shots, labels, and mean_errors must have the same length"
             )
 
         paths: list[Path] = []
@@ -105,9 +102,12 @@ class ExplainabilityRunner:
             # Safety net: match heatmap to shot shape
             if heatmap.shape != shot_data.shape:
                 import torch.nn.functional as F
+
                 h_t = torch.from_numpy(heatmap).float()[None, None]
                 h_t = F.interpolate(
-                    h_t, size=shot_data.shape, mode="bilinear",
+                    h_t,
+                    size=shot_data.shape,
+                    mode="bilinear",
                     align_corners=False,
                 )
                 heatmap = h_t[0, 0].numpy()

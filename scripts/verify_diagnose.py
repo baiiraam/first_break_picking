@@ -19,10 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.explainability import CoherenceAnalyzer, ErrorGalleryGenerator
 from src.utils.logger import setup_logger
 
-
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def make_per_trace(
     shot_ids: list[int],
@@ -46,21 +46,24 @@ def make_per_trace(
                 sta = gt + (5 if t % 3 == 0 else -3)
             else:
                 sta = gt
-            rows.append({
-                "shot_id": sid,
-                "trace_index": t,
-                "gt_pick_sample": gt,
-                "sta_lta_pick": sta,
-                "sta_lta_error_samples": abs(sta - gt),
-                "ml_pick": ml,
-                "ml_error_samples": abs(ml - gt),
-            })
+            rows.append(
+                {
+                    "shot_id": sid,
+                    "trace_index": t,
+                    "gt_pick_sample": gt,
+                    "sta_lta_pick": sta,
+                    "sta_lta_error_samples": abs(sta - gt),
+                    "ml_pick": ml,
+                    "ml_error_samples": abs(ml - gt),
+                }
+            )
     return pd.DataFrame(rows)
 
 
 # ============================================================
 # TESTS
 # ============================================================
+
 
 def test_coherence_smooth() -> bool:
     print()
@@ -110,8 +113,7 @@ def test_coherence_ratio() -> bool:
     print(f"  Zigzag ratio: {ratio_zigzag}")
 
     ok = ratio_zigzag > ratio_smooth
-    print(f"  {'✅ PASS' if ok else '❌ FAIL'} "
-          f"(zigzag ratio should exceed smooth)")
+    print(f"  {'✅ PASS' if ok else '❌ FAIL'} (zigzag ratio should exceed smooth)")
     return ok
 
 
@@ -123,15 +125,17 @@ def test_coherence_edge_cases() -> bool:
     ca = CoherenceAnalyzer(logger=logger)
 
     # All-zeros mask -> no valid picks
-    df_empty = pd.DataFrame({
-        "shot_id": [1, 1, 1],
-        "trace_index": [0, 1, 2],
-        "gt_pick_sample": [0, 0, 0],
-        "sta_lta_pick": [0, 0, 0],
-        "sta_lta_error_samples": [-1, -1, -1],
-        "ml_pick": [0, 0, 0],
-        "ml_error_samples": [-1, -1, -1],
-    })
+    df_empty = pd.DataFrame(
+        {
+            "shot_id": [1, 1, 1],
+            "trace_index": [0, 1, 2],
+            "gt_pick_sample": [0, 0, 0],
+            "sta_lta_pick": [0, 0, 0],
+            "sta_lta_error_samples": [-1, -1, -1],
+            "ml_pick": [0, 0, 0],
+            "ml_error_samples": [-1, -1, -1],
+        }
+    )
 
     metrics = ca.compute_metrics(df_empty)
     ml_coh = float(metrics.iloc[0]["ml_coherence"])
@@ -145,8 +149,8 @@ def test_gallery_generation() -> bool:
     print()
     print("TEST 5 — Gallery generation produces a valid PNG")
 
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     logger = setup_logger(task_name="verify_diagnose")
 
@@ -181,8 +185,12 @@ def test_metrics_columns() -> bool:
     metrics = ca.compute_metrics(df)
 
     expected = {
-        "shot_id", "ml_coherence", "gt_coherence", "sta_coherence",
-        "ml_over_gt_ratio", "n_valid",
+        "shot_id",
+        "ml_coherence",
+        "gt_coherence",
+        "sta_coherence",
+        "ml_over_gt_ratio",
+        "n_valid",
     }
     missing = expected - set(metrics.columns)
     ok = not missing
@@ -196,6 +204,7 @@ def test_metrics_columns() -> bool:
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     print("=" * 80)
@@ -218,6 +227,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  ❌ {name} raised: {type(e).__name__}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 

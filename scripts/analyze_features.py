@@ -59,10 +59,16 @@ def build_run_name(dataset: str, phase: str) -> str:
 @click.command()
 @click.option("--checkpoint", "-c", required=True, help="Model checkpoint")
 @click.option("--config", "-cfg", required=True, help="Config YAML")
-@click.option("--split", "-s", default="test",
-              type=click.Choice(["train", "val", "test"]))
-@click.option("--n-shots", "-n", type=int, default=5,
-              help="Number of shots for activation statistics")
+@click.option(
+    "--split", "-s", default="test", type=click.Choice(["train", "val", "test"])
+)
+@click.option(
+    "--n-shots",
+    "-n",
+    type=int,
+    default=5,
+    help="Number of shots for activation statistics",
+)
 @click.option("--no-mlflow", is_flag=True, default=False)
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--phase", default="feature-analysis-v1.0")
@@ -151,18 +157,25 @@ def main(
 
     # --- Summary CSV ---
     import pandas as pd
+
     rows = []
     for name in weight_stats:
-        rows.append({
-            "layer": name,
-            "n_params": weight_stats[name]["n_params"],
-            "weight_std": weight_stats[name]["std"],
-            "weight_frac_near_zero": weight_stats[name]["frac_near_zero"],
-            "n_channels": act_stats.get(name, {}).get("n_channels", None),
-            "activation_dead_frac": act_stats.get(name, {}).get("overall_dead_frac", None),
-            "high_similarity_pairs": sim_stats.get(name, {}).get("high_similarity_pairs", None),
-            "mean_similarity": sim_stats.get(name, {}).get("mean_similarity", None),
-        })
+        rows.append(
+            {
+                "layer": name,
+                "n_params": weight_stats[name]["n_params"],
+                "weight_std": weight_stats[name]["std"],
+                "weight_frac_near_zero": weight_stats[name]["frac_near_zero"],
+                "n_channels": act_stats.get(name, {}).get("n_channels", None),
+                "activation_dead_frac": act_stats.get(name, {}).get(
+                    "overall_dead_frac", None
+                ),
+                "high_similarity_pairs": sim_stats.get(name, {}).get(
+                    "high_similarity_pairs", None
+                ),
+                "mean_similarity": sim_stats.get(name, {}).get("mean_similarity", None),
+            }
+        )
     summary_df = pd.DataFrame(rows)
     csv_path = output_dir / "feature_analysis_summary.csv"
     summary_df.to_csv(csv_path, index=False)
@@ -195,9 +208,7 @@ def main(
     # Overall metrics
     metrics: dict[str, float] = {}
     if act_stats:
-        dead_fracs = [
-            s["overall_dead_frac"] for s in act_stats.values()
-        ]
+        dead_fracs = [s["overall_dead_frac"] for s in act_stats.values()]
         metrics["mean_dead_channel_frac"] = float(np.mean(dead_fracs))
         metrics["max_dead_channel_frac"] = float(np.max(dead_fracs))
 

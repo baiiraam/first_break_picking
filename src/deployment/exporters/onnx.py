@@ -44,9 +44,7 @@ def export_onnx(
     if example_input is None:
         example_input = torch.randn(*contract.expected_shape)
         if logger:
-            logger.info(
-                f"  Created example input: {tuple(example_input.shape)}"
-            )
+            logger.info(f"  Created example input: {tuple(example_input.shape)}")
 
     device = next(model.parameters()).device
     model = model.to(device)

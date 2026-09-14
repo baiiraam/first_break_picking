@@ -22,10 +22,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-
-COLOR_GT = "#2ca02c"    # green
-COLOR_ML = "#1f77b4"    # blue
-COLOR_STA = "#d62728"   # red
+COLOR_GT = "#2ca02c"  # green
+COLOR_ML = "#1f77b4"  # blue
+COLOR_STA = "#d62728"  # red
 
 
 class CoherenceAnalyzer:
@@ -73,14 +72,15 @@ class CoherenceAnalyzer:
                 ml_over_gt_ratio, n_valid
         """
         required = {
-            "shot_id", "trace_index", "gt_pick_sample",
-            "sta_lta_pick", "ml_pick",
+            "shot_id",
+            "trace_index",
+            "gt_pick_sample",
+            "sta_lta_pick",
+            "ml_pick",
         }
         missing = required - set(per_trace.columns)
         if missing:
-            raise ValueError(
-                f"per_trace DataFrame missing columns: {sorted(missing)}"
-            )
+            raise ValueError(f"per_trace DataFrame missing columns: {sorted(missing)}")
 
         rows: list[dict] = []
 
@@ -101,14 +101,16 @@ class CoherenceAnalyzer:
 
             n_valid = int((ml > 0).sum())
 
-            rows.append({
-                "shot_id": int(shot_id),
-                "ml_coherence": ml_coh,
-                "gt_coherence": gt_coh,
-                "sta_coherence": sta_coh,
-                "ml_over_gt_ratio": ratio,
-                "n_valid": n_valid,
-            })
+            rows.append(
+                {
+                    "shot_id": int(shot_id),
+                    "ml_coherence": ml_coh,
+                    "gt_coherence": gt_coh,
+                    "sta_coherence": sta_coh,
+                    "ml_over_gt_ratio": ratio,
+                    "n_valid": n_valid,
+                }
+            )
 
         df = pd.DataFrame(rows)
         self.logger.info(
@@ -147,9 +149,7 @@ class CoherenceAnalyzer:
             axes = [axes]
 
         for ax, (shot_id, label) in zip(axes, selections):
-            sub = per_trace[per_trace["shot_id"] == shot_id].sort_values(
-                "trace_index"
-            )
+            sub = per_trace[per_trace["shot_id"] == shot_id].sort_values("trace_index")
             trace_idx = sub["trace_index"].to_numpy()
             ml = sub["ml_pick"].to_numpy()
             gt = sub["gt_pick_sample"].to_numpy()
@@ -163,9 +163,14 @@ class CoherenceAnalyzer:
             ]:
                 valid = arr > 0
                 ax.plot(
-                    trace_idx[valid], arr[valid],
-                    marker=".", linestyle="-", linewidth=0.8,
-                    color=color, label=name, markersize=4,
+                    trace_idx[valid],
+                    arr[valid],
+                    marker=".",
+                    linestyle="-",
+                    linewidth=0.8,
+                    color=color,
+                    label=name,
+                    markersize=4,
                 )
 
             ax.set_ylim(n_samples, 0)
@@ -199,43 +204,48 @@ class CoherenceAnalyzer:
         """
         Generate coherence_distribution.png.
         """
-        ml = metrics["ml_coherence"].replace(
-            [np.inf, -np.inf], np.nan
-        ).dropna()
-        gt = metrics["gt_coherence"].replace(
-            [np.inf, -np.inf], np.nan
-        ).dropna()
-        sta = metrics["sta_coherence"].replace(
-            [np.inf, -np.inf], np.nan
-        ).dropna()
+        ml = metrics["ml_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
+        gt = metrics["gt_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
+        sta = metrics["sta_coherence"].replace([np.inf, -np.inf], np.nan).dropna()
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
         # Use a shared bin range
-        p99 = float(np.percentile(
-            np.concatenate([ml.values, gt.values, sta.values]), 99
-        ))
+        p99 = float(
+            np.percentile(np.concatenate([ml.values, gt.values, sta.values]), 99)
+        )
         upper = max(20.0, min(p99 * 1.1, 200.0))
         bins = np.linspace(0, upper, 40)
 
         ax.hist(
-            gt.values, bins=bins, color=COLOR_GT, alpha=0.5,
-            label="GT", edgecolor="black",
+            gt.values,
+            bins=bins,
+            color=COLOR_GT,
+            alpha=0.5,
+            label="GT",
+            edgecolor="black",
         )
         ax.hist(
-            ml.values, bins=bins, color=COLOR_ML, alpha=0.5,
-            label="ML", edgecolor="black",
+            ml.values,
+            bins=bins,
+            color=COLOR_ML,
+            alpha=0.5,
+            label="ML",
+            edgecolor="black",
         )
         ax.hist(
-            sta.values, bins=bins, color=COLOR_STA, alpha=0.5,
-            label="STA/LTA", edgecolor="black",
+            sta.values,
+            bins=bins,
+            color=COLOR_STA,
+            alpha=0.5,
+            label="STA/LTA",
+            edgecolor="black",
         )
 
         ax.set_xlabel("Coherence score (median absolute curvature)")
         ax.set_ylabel("Count")
         ax.set_title(
-            "Wavefront coherence distribution across test shots "
-            "(lower = smoother)"
+            "Wavefront coherence distribution across test shots (lower = smoother)"
         )
 
         text = (
@@ -245,10 +255,12 @@ class CoherenceAnalyzer:
             f"STA/LTA: {sta.median():.2f}\n"
             f"\n"
             f"ML / GT ratio (median): "
-            f"{metrics['ml_over_gt_ratio'].replace([np.inf,-np.inf], np.nan).median():.2f}"
+            f"{metrics['ml_over_gt_ratio'].replace([np.inf, -np.inf], np.nan).median():.2f}"
         )
         ax.text(
-            0.97, 0.97, text,
+            0.97,
+            0.97,
+            text,
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment="top",

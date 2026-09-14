@@ -24,6 +24,7 @@ from src.explainability import Explainer, GradCAM, find_last_conv_layer
 # TEST MODELS
 # ============================================================
 
+
 class TinySeg(nn.Module):
     """
     Tiny segmentation model: 2 conv layers, no downsampling.
@@ -61,6 +62,7 @@ class ConstantModel(nn.Module):
 # TESTS
 # ============================================================
 
+
 def test_contract():
     print()
     print("TEST 1 — Contract: subclass, find_last_conv_layer, output format")
@@ -97,12 +99,13 @@ def test_contract():
         print(f"  ✅ heatmap dtype: {heatmap.dtype}")
 
     if heatmap.min() < 0 or heatmap.max() > 1:
-        print(f"  ❌ heatmap values outside [0, 1]: min={heatmap.min()}, "
-              f"max={heatmap.max()}")
+        print(
+            f"  ❌ heatmap values outside [0, 1]: min={heatmap.min()}, "
+            f"max={heatmap.max()}"
+        )
         ok = False
     else:
-        print(f"  ✅ heatmap range: [{heatmap.min():.4f}, "
-              f"{heatmap.max():.4f}]")
+        print(f"  ✅ heatmap range: [{heatmap.min():.4f}, {heatmap.max():.4f}]")
 
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     return ok
@@ -114,8 +117,9 @@ def test_known_peak():
     Grad-CAM should highlight the bright spot.
     """
     print()
-    print("TEST 2 — Known-peak: heatmap highlights the region that "
-          "drives the prediction")
+    print(
+        "TEST 2 — Known-peak: heatmap highlights the region that drives the prediction"
+    )
 
     torch.manual_seed(0)
     model = TinySeg()
@@ -148,16 +152,13 @@ def test_known_peak():
     heatmap = cam.explain(model, x, target_class=2)
 
     # Peak location
-    peak_row, peak_col = np.unravel_index(
-        np.argmax(heatmap), heatmap.shape
-    )
+    peak_row, peak_col = np.unravel_index(np.argmax(heatmap), heatmap.shape)
     print(f"  Peak location: ({peak_row}, {peak_col})")
     print("  Expected around: (10, 15)")
 
     # Within 6 pixels in each direction
     ok = abs(peak_row - 10) <= 6 and abs(peak_col - 15) <= 6
-    print(f"  {'✅ PASS' if ok else '❌ FAIL'} "
-          f"(peak should be near (10, 15))")
+    print(f"  {'✅ PASS' if ok else '❌ FAIL'} (peak should be near (10, 15))")
     return ok
 
 
@@ -193,8 +194,10 @@ def test_hirescam():
         and heatmap.min() >= 0
         and heatmap.max() <= 1
     )
-    print(f"  Shape: {heatmap.shape}, dtype: {heatmap.dtype}, "
-          f"range: [{heatmap.min():.4f}, {heatmap.max():.4f}]")
+    print(
+        f"  Shape: {heatmap.shape}, dtype: {heatmap.dtype}, "
+        f"range: [{heatmap.min():.4f}, {heatmap.max():.4f}]"
+    )
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     return ok
 
@@ -242,6 +245,7 @@ def test_real_model():
 # MAIN
 # ============================================================
 
+
 def main() -> int:
     print("=" * 80)
     print("VERIFY GRAD-CAM (F.1)")
@@ -262,6 +266,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  ❌ {name} raised: {type(e).__name__}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 

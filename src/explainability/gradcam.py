@@ -41,9 +41,7 @@ class GradCAM(Explainer):
         method: str = "gradcam",
     ):
         if method not in ("gradcam", "hirescam"):
-            raise ValueError(
-                f"method must be 'gradcam' or 'hirescam', got {method!r}"
-            )
+            raise ValueError(f"method must be 'gradcam' or 'hirescam', got {method!r}")
         self.target_layer = target_layer
         self.method = method
 
@@ -71,8 +69,7 @@ class GradCAM(Explainer):
             )
         if input_tensor.shape[0] != 1:
             raise ValueError(
-                f"input_tensor must have batch size 1, got "
-                f"{input_tensor.shape[0]}"
+                f"input_tensor must have batch size 1, got {input_tensor.shape[0]}"
             )
 
         # Resolve the target layer
@@ -133,8 +130,8 @@ class GradCAM(Explainer):
                     "forward computation?"
                 )
 
-            acts = activations["value"]      # (1, C_conv, H_conv, W_conv)
-            grads = gradients["value"]       # (1, C_conv, H_conv, W_conv)
+            acts = activations["value"]  # (1, C_conv, H_conv, W_conv)
+            grads = gradients["value"]  # (1, C_conv, H_conv, W_conv)
 
             # Compute channel weights
             if self.method == "gradcam":

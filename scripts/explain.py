@@ -50,6 +50,7 @@ from src.utils.tracking_conventions import (
 # HELPERS
 # ============================================================
 
+
 def compute_per_shot_errors(
     model: torch.nn.Module,
     dataset,
@@ -79,9 +80,7 @@ def compute_per_shot_errors(
             mask = (pred_picks > 0) & (gt_picks > 0)
             n_valid = int(mask.sum())
             if n_valid > 0:
-                mean_err = float(
-                    np.abs(pred_picks[mask] - gt_picks[mask]).mean()
-                )
+                mean_err = float(np.abs(pred_picks[mask] - gt_picks[mask]).mean())
             else:
                 mean_err = float("inf")
 
@@ -103,14 +102,10 @@ def select_best_median_worst(
     for best, median, worst (in that order).
     """
     # Filter to shots with at least one valid comparison
-    valid = {
-        sid: stats for sid, stats in per_shot.items()
-        if stats["n_valid"] > 0
-    }
+    valid = {sid: stats for sid, stats in per_shot.items() if stats["n_valid"] > 0}
     if len(valid) < 3:
         raise ValueError(
-            f"Need at least 3 valid shots to pick best/median/worst, "
-            f"got {len(valid)}"
+            f"Need at least 3 valid shots to pick best/median/worst, got {len(valid)}"
         )
 
     sorted_items = sorted(valid.items(), key=lambda kv: kv[1]["mean_error"])
@@ -136,24 +131,34 @@ def build_run_name(dataset: str, phase: str) -> str:
 # MAIN
 # ============================================================
 
+
 @click.command()
 @click.option("--config", "-c", required=True, help="Config YAML path")
-@click.option("--model", "-m", required=True,
-              help="Path to ML model checkpoint")
-@click.option("--split", "-s", default="test",
-              type=click.Choice(["train", "val", "test"]),
-              help="Which split to draw shots from (default: test)")
-@click.option("--method", default="gradcam",
-              type=click.Choice(["gradcam", "hirescam"]),
-              help="Explainability method")
-@click.option("--target-class", type=int, default=2,
-              help="Class to explain (default: 2 = strip)")
-@click.option("--no-mlflow", is_flag=True, default=False,
-              help="Skip MLflow logging")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Generate figures, don't log to MLflow")
-@click.option("--phase", type=str, default="explain-v1.0",
-              help="MLflow phase tag")
+@click.option("--model", "-m", required=True, help="Path to ML model checkpoint")
+@click.option(
+    "--split",
+    "-s",
+    default="test",
+    type=click.Choice(["train", "val", "test"]),
+    help="Which split to draw shots from (default: test)",
+)
+@click.option(
+    "--method",
+    default="gradcam",
+    type=click.Choice(["gradcam", "hirescam"]),
+    help="Explainability method",
+)
+@click.option(
+    "--target-class", type=int, default=2, help="Class to explain (default: 2 = strip)"
+)
+@click.option("--no-mlflow", is_flag=True, default=False, help="Skip MLflow logging")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Generate figures, don't log to MLflow",
+)
+@click.option("--phase", type=str, default="explain-v1.0", help="MLflow phase tag")
 def main(
     config: str,
     model: str,
@@ -231,7 +236,7 @@ def main(
         idx = per_shot[sid]["dataset_index"]
         x, y = dataset[idx]
         shot_data = x.squeeze(0).cpu().numpy()  # (H, W)
-        gt_mask = y.cpu().numpy()               # (H, W)
+        gt_mask = y.cpu().numpy()  # (H, W)
         shots_for_explain.append((shot_data, gt_mask))
         shot_ids.append(sid)
         labels.append(label)
@@ -243,9 +248,7 @@ def main(
         f"explainability_images_{cfg.dataset_name}_"
         f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     )
-    image_generator = ExplainabilityImageGenerator(
-        output_dir=output_dir, logger=logger
-    )
+    image_generator = ExplainabilityImageGenerator(output_dir=output_dir, logger=logger)
 
     runner = ExplainabilityRunner(
         model=model_obj,

@@ -32,10 +32,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.deployment import Predictor
 from src.utils.logger import setup_logger
 
-
 # ============================================================
 # BENCHMARK
 # ============================================================
+
 
 def time_function(fn, n_warmup: int = 2, n_iter: int = 20) -> dict:
     """
@@ -151,9 +151,7 @@ def benchmark_onnx(
     logger.info("")
     logger.info("Loading ONNX...")
     t0 = time.perf_counter()
-    session = ort.InferenceSession(
-        onnx_path, providers=["CPUExecutionProvider"]
-    )
+    session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
     load_ms = (time.perf_counter() - t0) * 1000
     logger.info(f"  Load time: {load_ms:.1f} ms")
 
@@ -171,17 +169,26 @@ def benchmark_onnx(
 # MAIN
 # ============================================================
 
+
 @click.command()
-@click.option("--checkpoint", "-c", required=True,
-              help="Path to PyTorch checkpoint")
-@click.option("--device", "-d", default="cpu",
-              help="Device for PyTorch benchmark (cpu/cuda/mps)")
-@click.option("--n-iterations", "-n", type=int, default=20,
-              help="Number of timing iterations per backend")
-@click.option("--torchscript", type=str, default=None,
-              help="Optional TorchScript path to benchmark")
-@click.option("--onnx", type=str, default=None,
-              help="Optional ONNX path to benchmark")
+@click.option("--checkpoint", "-c", required=True, help="Path to PyTorch checkpoint")
+@click.option(
+    "--device", "-d", default="cpu", help="Device for PyTorch benchmark (cpu/cuda/mps)"
+)
+@click.option(
+    "--n-iterations",
+    "-n",
+    type=int,
+    default=20,
+    help="Number of timing iterations per backend",
+)
+@click.option(
+    "--torchscript",
+    type=str,
+    default=None,
+    help="Optional TorchScript path to benchmark",
+)
+@click.option("--onnx", type=str, default=None, help="Optional ONNX path to benchmark")
 def main(
     checkpoint: str,
     device: str,
@@ -206,11 +213,15 @@ def main(
         n_iter=n_iterations,
         logger=logger,
     )
-    contract_shape = (1, 1,
-                      int(round(pytorch_result["inference"]["n_iter"] * 0)),
-                      0)  # placeholder, we'll fix below
+    contract_shape = (
+        1,
+        1,
+        int(round(pytorch_result["inference"]["n_iter"] * 0)),
+        0,
+    )  # placeholder, we'll fix below
     # Actually re-read the contract
     from src.deployment import read_contract_from_checkpoint
+
     contract = read_contract_from_checkpoint(checkpoint)
 
     # --- TorchScript ---
@@ -239,8 +250,10 @@ def main(
     logger.info("=" * 70)
     logger.info("SUMMARY")
     logger.info("=" * 70)
-    logger.info(f"  {'Backend':<14} {'Load (ms)':<12} "
-                f"{'Median (ms)':<14} {'Min (ms)':<12} {'p90 (ms)':<12}")
+    logger.info(
+        f"  {'Backend':<14} {'Load (ms)':<12} "
+        f"{'Median (ms)':<14} {'Min (ms)':<12} {'p90 (ms)':<12}"
+    )
     logger.info("-" * 70)
 
     p = pytorch_result["inference"]
@@ -264,10 +277,7 @@ def main(
         )
 
     logger.info("")
-    logger.info(
-        f"  Throughput (PyTorch): "
-        f"{1000 / p['median_ms']:.2f} shots/second"
-    )
+    logger.info(f"  Throughput (PyTorch): {1000 / p['median_ms']:.2f} shots/second")
 
 
 if __name__ == "__main__":

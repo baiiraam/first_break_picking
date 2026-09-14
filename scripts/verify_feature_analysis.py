@@ -92,11 +92,7 @@ def test_kernel_similarity():
     ksa = KernelSimilarityAnalyzer(logger=logger)
     stats = ksa.analyze(model)
     ms = stats["conv1"]["mean_similarity"]
-    ok = (
-        "conv1" in stats
-        and stats["conv1"]["n_channels"] == 4
-        and -1.0 <= ms <= 1.0
-    )
+    ok = "conv1" in stats and stats["conv1"]["n_channels"] == 4 and -1.0 <= ms <= 1.0
     print(f"  conv1 channels: {stats['conv1']['n_channels']}")
     print(f"  conv1 mean sim: {ms:.3f}")
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
@@ -123,8 +119,10 @@ def test_activation_statistics():
         )
     print(f"  Layers: {list(stats.keys())}")
     if "conv1" in stats:
-        print(f"  conv1 dead_frac: "
-              f"{[round(f, 3) for f in stats['conv1']['channel_dead_frac']]}")
+        print(
+            f"  conv1 dead_frac: "
+            f"{[round(f, 3) for f in stats['conv1']['channel_dead_frac']]}"
+        )
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
     return ok
 
@@ -192,6 +190,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  ❌ {name} raised: {type(e).__name__}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 

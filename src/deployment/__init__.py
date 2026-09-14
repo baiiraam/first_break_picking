@@ -10,7 +10,7 @@ from src.deployment.validators import verify_numeric_equivalence
 
 __all__ = [
     "InputContract",
-    "read_contract_from_checkpoint",
     "Predictor",
+    "read_contract_from_checkpoint",
     "verify_numeric_equivalence",
 ]

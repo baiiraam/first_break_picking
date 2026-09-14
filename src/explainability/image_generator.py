@@ -38,11 +38,11 @@ class ExplainabilityImageGenerator:
     def generate_for_shot(
         self,
         shot_id: int,
-        shot_data: np.ndarray,     # (n_traces, n_samples) float
-        gt_mask: np.ndarray,       # (n_traces, n_samples) int
-        pred_mask: np.ndarray,     # (n_traces, n_samples) int
-        heatmap: np.ndarray,       # (n_traces, n_samples) float in [0,1]
-        label: str,                # "best" | "median" | "worst"
+        shot_data: np.ndarray,  # (n_traces, n_samples) float
+        gt_mask: np.ndarray,  # (n_traces, n_samples) int
+        pred_mask: np.ndarray,  # (n_traces, n_samples) int
+        heatmap: np.ndarray,  # (n_traces, n_samples) float in [0,1]
+        label: str,  # "best" | "median" | "worst"
         mean_error: float,
         dataset_name: str,
     ) -> Path:
@@ -55,8 +55,11 @@ class ExplainabilityImageGenerator:
         if v == 0:
             v = 1.0
         ax.imshow(
-            shot_data.T, cmap="seismic", aspect="auto",
-            vmin=-v, vmax=v,
+            shot_data.T,
+            cmap="seismic",
+            aspect="auto",
+            vmin=-v,
+            vmax=v,
         )
         ax.set_title(f"Seismogram — shot {shot_id}")
         ax.set_xlabel("Trace")
@@ -64,18 +67,14 @@ class ExplainabilityImageGenerator:
 
         # Panel 2: ground-truth mask
         ax = axes[0, 1]
-        ax.imshow(
-            gt_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto"
-        )
+        ax.imshow(gt_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto")
         ax.set_title("Ground truth mask")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
 
         # Panel 3: predicted mask
         ax = axes[1, 0]
-        ax.imshow(
-            pred_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto"
-        )
+        ax.imshow(pred_mask.T, cmap=MASK_CMAP, norm=MASK_NORM, aspect="auto")
         ax.set_title("Predicted mask")
         ax.set_xlabel("Trace")
         ax.set_ylabel("Sample")
@@ -86,13 +85,20 @@ class ExplainabilityImageGenerator:
         if v == 0:
             v = 1.0
         ax.imshow(
-            shot_data.T, cmap="gray", aspect="auto",
-            vmin=-v, vmax=v,
+            shot_data.T,
+            cmap="gray",
+            aspect="auto",
+            vmin=-v,
+            vmax=v,
         )
         # Overlay heatmap. Use 'jet' colormap.
         ax.imshow(
-            heatmap.T, cmap="jet", aspect="auto",
-            alpha=0.5, vmin=0.0, vmax=1.0,
+            heatmap.T,
+            cmap="jet",
+            aspect="auto",
+            alpha=0.5,
+            vmin=0.0,
+            vmax=1.0,
         )
         ax.set_title("Seismogram + Grad-CAM (class 2 / strip)")
         ax.set_xlabel("Trace")

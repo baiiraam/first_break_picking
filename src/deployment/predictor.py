@@ -20,7 +20,6 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
@@ -145,13 +144,7 @@ class Predictor:
         prepared = self._pad_or_crop(shot_data)
 
         # 3. Build tensor (1, 1, H, W)
-        x = (
-            torch.from_numpy(prepared)
-            .float()
-            .unsqueeze(0)
-            .unsqueeze(0)
-            .to(self.device)
-        )
+        x = torch.from_numpy(prepared).float().unsqueeze(0).unsqueeze(0).to(self.device)
 
         # 4. Run model
         with torch.no_grad():
@@ -177,9 +170,7 @@ class Predictor:
         Returns:
             (target_traces,) int64 picks.
         """
-        unique_shots, start_indices, end_indices = load_shot_indices(
-            str(hdf5_path)
-        )
+        unique_shots, start_indices, end_indices = load_shot_indices(str(hdf5_path))
         if shot_index < 0 or shot_index >= len(unique_shots):
             raise IndexError(
                 f"shot_index {shot_index} out of range "

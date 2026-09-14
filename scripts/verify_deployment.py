@@ -26,13 +26,13 @@ from src.deployment import (
 )
 from src.deployment.exporters import export_onnx, export_torchscript
 
-
 CHECKPOINT = "models/registry/MPSLightUNet_Halfmile_best.pt"
 
 
 # ============================================================
 # TESTS
 # ============================================================
+
 
 def test_contract_shape():
     print()
@@ -69,14 +69,16 @@ def test_predictor_load():
     print("TEST 3 — Predictor.load()")
 
     if not Path(CHECKPOINT).exists():
-        print(f"  ⚠️  Checkpoint not found — skipping")
+        print("  ⚠️  Checkpoint not found — skipping")
         return True
 
     try:
         predictor = Predictor.load(CHECKPOINT, device="cpu")
     except Exception as e:
         print(f"  ❌ Failed: {type(e).__name__}: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
         return False
 
     print(f"  Loaded: {predictor}")
@@ -89,7 +91,7 @@ def test_predict_shapes():
     print("TEST 4 — Predictor.predict() output shapes and dtypes")
 
     if not Path(CHECKPOINT).exists():
-        print(f"  ⚠️  Checkpoint not found — skipping")
+        print("  ⚠️  Checkpoint not found — skipping")
         return True
 
     predictor = Predictor.load(CHECKPOINT, device="cpu")
@@ -98,10 +100,7 @@ def test_predict_shapes():
     shot = np.random.randn(500, 751).astype(np.float32)
     picks = predictor.predict(shot)
 
-    ok = (
-        picks.shape == (predictor.contract.target_traces,)
-        and picks.dtype == np.int64
-    )
+    ok = picks.shape == (predictor.contract.target_traces,) and picks.dtype == np.int64
     print(f"  Input shot shape: {shot.shape}")
     print(f"  Output picks: {picks.shape}, dtype {picks.dtype}")
     print(f"  {'✅ PASS' if ok else '❌ FAIL'}")
@@ -113,14 +112,15 @@ def test_predict_matches_manual():
     print("TEST 5 — predict() matches manual pipeline")
 
     if not Path(CHECKPOINT).exists():
-        print(f"  ⚠️  Checkpoint not found — skipping")
+        print("  ⚠️  Checkpoint not found — skipping")
         return True
 
     predictor = Predictor.load(CHECKPOINT, device="cpu")
 
     # Build a real-shot-sized input
-    shot = np.random.randn(predictor.contract.target_traces,
-                           predictor.contract.n_samples).astype(np.float32)
+    shot = np.random.randn(
+        predictor.contract.target_traces, predictor.contract.n_samples
+    ).astype(np.float32)
 
     # Predictor path
     picks_predictor = predictor.predict(shot)
@@ -131,6 +131,7 @@ def test_predict_matches_manual():
         logits = predictor.model(x)
         pred = torch.argmax(logits, dim=1)[0].cpu().numpy()
     from src.training.metrics import extract_picks_from_mask
+
     picks_manual = extract_picks_from_mask(pred)
 
     ok = bool(np.array_equal(picks_predictor, picks_manual))
@@ -146,7 +147,7 @@ def test_padding_and_cropping():
     print("TEST 6 — Padding and cropping")
 
     if not Path(CHECKPOINT).exists():
-        print(f"  ⚠️  Checkpoint not found — skipping")
+        print("  ⚠️  Checkpoint not found — skipping")
         return True
 
     predictor = Predictor.load(CHECKPOINT, device="cpu")
@@ -173,7 +174,7 @@ def test_exports_and_equivalence():
     print("TEST 7 — Export and verify numeric equivalence")
 
     if not Path(CHECKPOINT).exists():
-        print(f"  ⚠️  Checkpoint not found — skipping")
+        print("  ⚠️  Checkpoint not found — skipping")
         return True
 
     predictor = Predictor.load(CHECKPOINT, device="cpu")
@@ -196,14 +197,18 @@ def test_exports_and_equivalence():
             onnx_path=onnx_path,
         )
 
-        print(f"  TorchScript: match={results['torchscript']['match']}, "
-              f"max_diff={results['torchscript']['max_diff']:.2e}")
-        print(f"  ONNX:        match={results['onnx']['match']}, "
-              f"max_diff={results['onnx']['max_diff']:.2e}")
+        print(
+            f"  TorchScript: match={results['torchscript']['match']}, "
+            f"max_diff={results['torchscript']['max_diff']:.2e}"
+        )
+        print(
+            f"  ONNX:        match={results['onnx']['match']}, "
+            f"max_diff={results['onnx']['max_diff']:.2e}"
+        )
 
-        if results['torchscript'].get('error'):
+        if results["torchscript"].get("error"):
             print(f"  TS error: {results['torchscript']['error']}")
-        if results['onnx'].get('error'):
+        if results["onnx"].get("error"):
             print(f"  ONNX error: {results['onnx']['error']}")
 
         ok_ts = results["torchscript"]["match"]
@@ -224,6 +229,7 @@ def test_exports_and_equivalence():
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main() -> int:
     print("=" * 80)
@@ -247,6 +253,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  ❌ {name} raised: {type(e).__name__}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 

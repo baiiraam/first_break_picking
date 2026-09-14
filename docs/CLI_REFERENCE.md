@@ -781,6 +781,7 @@ Query examples:
 
 ```python
 import mlflow
+
 mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
 # All baseline runs for Halfmile

@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-
 COLOR_GT = "#2ca02c"
 COLOR_ML = "#1f77b4"
 COLOR_STA = "#d62728"
@@ -59,9 +58,7 @@ class ErrorGalleryGenerator:
             Path to saved figure.
         """
         if method not in ("ml", "sta_lta"):
-            raise ValueError(
-                f"method must be 'ml' or 'sta_lta', got {method!r}"
-            )
+            raise ValueError(f"method must be 'ml' or 'sta_lta', got {method!r}")
 
         err_col = f"{method}_error_samples"
         pred_col = f"{method}_pick"
@@ -75,13 +72,17 @@ class ErrorGalleryGenerator:
         df = df.head(n_worst)
 
         if len(df) == 0:
-            self.logger.warning(
-                f"[Gallery] No valid traces for method '{method}'"
-            )
+            self.logger.warning(f"[Gallery] No valid traces for method '{method}'")
             # Write a placeholder figure
             fig, ax = plt.subplots(figsize=(10, 4))
-            ax.text(0.5, 0.5, f"No valid picks for {method}",
-                    ha="center", va="center", fontsize=14)
+            ax.text(
+                0.5,
+                0.5,
+                f"No valid picks for {method}",
+                ha="center",
+                va="center",
+                fontsize=14,
+            )
             ax.axis("off")
             out = self.output_dir / output_filename
             fig.savefig(out, dpi=120)
@@ -98,15 +99,21 @@ class ErrorGalleryGenerator:
             trace_idx = int(row["trace_index"])
 
             if shot_id not in shots:
-                ax.text(0.5, 0.5, f"shot {shot_id} not loaded",
-                        ha="center", va="center")
+                ax.text(
+                    0.5, 0.5, f"shot {shot_id} not loaded", ha="center", va="center"
+                )
                 ax.axis("off")
                 continue
 
             seismogram = shots[shot_id]
             if trace_idx >= seismogram.shape[0]:
-                ax.text(0.5, 0.5, f"trace {trace_idx} out of range",
-                        ha="center", va="center")
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"trace {trace_idx} out of range",
+                    ha="center",
+                    va="center",
+                )
                 ax.axis("off")
                 continue
 
@@ -129,11 +136,11 @@ class ErrorGalleryGenerator:
             if gt > 0:
                 ax.axvline(gt, color=COLOR_GT, linewidth=1.2, alpha=0.8)
             if sta > 0:
-                ax.axvline(sta, color=COLOR_STA, linewidth=1.2,
-                           linestyle="--", alpha=0.8)
+                ax.axvline(
+                    sta, color=COLOR_STA, linewidth=1.2, linestyle="--", alpha=0.8
+                )
             if ml > 0:
-                ax.axvline(ml, color=COLOR_ML, linewidth=1.2,
-                           linestyle=":", alpha=0.8)
+                ax.axvline(ml, color=COLOR_ML, linewidth=1.2, linestyle=":", alpha=0.8)
 
             # Row annotation
             err_val = float(row[err_col])
@@ -143,33 +150,42 @@ class ErrorGalleryGenerator:
 
             ax.set_ylabel(
                 f"shot {shot_id}\ntrace {trace_idx}",
-                fontsize=7, rotation=0, labelpad=45, va="center",
+                fontsize=7,
+                rotation=0,
+                labelpad=45,
+                va="center",
             )
             ax.set_title(
                 f"{method.upper()} err={err_val:.0f}  |  "
                 f"{other_name} err={other_err:.0f}",
-                fontsize=7, loc="right",
+                fontsize=7,
+                loc="right",
             )
             ax.set_xticks([])
             ax.tick_params(axis="y", labelsize=6)
 
         # Legend for the whole figure
         from matplotlib.lines import Line2D
+
         legend_elements = [
             Line2D([0], [0], color=COLOR_GT, lw=2, label="GT pick"),
-            Line2D([0], [0], color=COLOR_STA, lw=2, linestyle="--",
-                   label="STA/LTA pick"),
-            Line2D([0], [0], color=COLOR_ML, lw=2, linestyle=":",
-                   label="ML pick"),
+            Line2D(
+                [0], [0], color=COLOR_STA, lw=2, linestyle="--", label="STA/LTA pick"
+            ),
+            Line2D([0], [0], color=COLOR_ML, lw=2, linestyle=":", label="ML pick"),
         ]
         fig.legend(
-            handles=legend_elements, loc="upper center",
-            ncol=3, fontsize=9, bbox_to_anchor=(0.5, 0.995),
+            handles=legend_elements,
+            loc="upper center",
+            ncol=3,
+            fontsize=9,
+            bbox_to_anchor=(0.5, 0.995),
         )
 
         fig.suptitle(
             f"Worst {n} traces by {method.upper()} error",
-            fontsize=12, y=0.999,
+            fontsize=12,
+            y=0.999,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.985))
 
