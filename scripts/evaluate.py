@@ -165,8 +165,8 @@ def _log_evaluation_to_mlflow(
 @click.option(
     "--output", "-o", default="evaluation_results", help="Output directory for results"
 )
-@click.option("--device", "-d", default="mps", help="Device to use (cpu/cuda/mps)")
-@click.option("--batch_size", "-b", default=4, help="Batch size for evaluation")
+@click.option("--device", "-d", default=None, help="Device to use (cpu/cuda/mps)")
+@click.option("--batch_size", "-b", default=None, help="Batch size for evaluation")
 @click.option("--dataset", "-ds", help="Override dataset name (for logging)")
 @click.option(
     "--split",
@@ -193,8 +193,8 @@ def main(
     config: str,
     model: str,
     output: str,
-    device: str,
-    batch_size: int,
+    device: str | None,
+    batch_size: int | None,
     dataset: str,
     split: str,
     detailed: bool,
@@ -208,8 +208,10 @@ def main(
         config_dict = yaml.safe_load(f)
 
     cfg = SeismicConfig(**config_dict)
-    cfg.device = device
-    cfg.batch_size = batch_size
+    if device is not None:
+        cfg.device = device
+    if batch_size is not None:
+        cfg.batch_size = batch_size
 
     if dataset:
         cfg.dataset_name = dataset

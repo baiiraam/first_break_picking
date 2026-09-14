@@ -4,7 +4,7 @@ python scripts/preprocess.py \
 
 # 2. Train (In mac, for full training, prevent desktop becoming idle, so that the process does not hang)
 caffeinate -i nohup python scripts/train.py \
-    --config configs/{dataset}.yaml
+    --config configs/{dataset}.yaml \
     --model {model} \
     --epochs {epoch_number} \
     --phase {phase}-{dataset}-{model}-{training} \
